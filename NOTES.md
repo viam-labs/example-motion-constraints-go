@@ -56,9 +56,11 @@ Surprising result from the OQ2 verification: even injecting arm B's link geometr
 
 _Reserved — populate as we discover them while building scenarios._
 
-## Customer-facing edge cases
+## Phase 4 (single_arm_obstacle) — assumptions to verify on first real-machine run
 
-_Reserved — populate as we discover them while building scenarios._
+- `framesystem.NewFromService(ctx, fsSvc, nil)` returns a `*FrameSystem` whose frame name for each arm component matches the component's name in machine config (we plan via `armName := r.armOrder[0]` and use the same string in `FrameSystemPoses`). Confirmed by inspection of motion service builtin code; not yet exercised end-to-end.
+- `framesystem.FromDependencies(deps)` resolves the auto-injected `$framesystem` service for modules. The fact that `Validate` returns `framesystem.PublicServiceName.String()` as a required dep should sequence the framework correctly.
+- `arm.MoveThroughJointPositions` on a fake arm teleports through configurations one by one — fine for a demo. Real arms will want `arm.MoveOptions` blending settings.
 
 ## RDK bugs to file
 

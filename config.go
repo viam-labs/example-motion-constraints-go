@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"go.viam.com/rdk/resource"
+	"go.viam.com/rdk/robot/framesystem"
 )
 
 // Config is the JSON config schema for the planner service. Phase 2 fleshes
@@ -48,11 +49,11 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 		deps = append(deps, c.MotionService)
 	}
 	deps = append(deps, c.Arms...)
+	// The framesystem service is auto-injected for modules; declaring it
+	// here ensures the resource graph waits for it before constructing us
+	// (so framesystem.FromDependencies succeeds inside Reconfigure).
+	deps = append(deps, framesystem.PublicServiceName.String())
 
-	// Soft check: if the user specified arms but no motion service, that's
-	// likely a misconfiguration. We don't return an error yet because the
-	// skeleton isn't doing motion planning, but the message will surface in
-	// the validation logs.
 	if len(c.Arms) > 0 && c.MotionService == "" {
 		return deps, nil, errors.New(
 			path + ": arms configured but motion_service is required for planning")

@@ -3,39 +3,39 @@
 // simulated arms. It publishes planned trajectories, obstacles, and collision
 // state to the Viam 3D scene viewer.
 //
-// Status: Phase 2 — runtime skeleton. The service constructs, reconfigures,
-// fans out an empty stream to subscribers, runs a no-op tick goroutine, and
-// responds to a small set of DoCommand verbs. No scenarios are implemented
-// yet; the preset keys are exposed via `list` so callers can see the planned
-// catalog. See NOTES.md OQ1/OQ2 for the questions Phase 3 will answer.
+// Status: Phase 4 — first end-to-end scenario. The service resolves arms +
+// the framesystem service, runs the `single_arm_obstacle` preset on a loop
+// (emitting obstacle + ghost-trajectory geometries + driving the arm), and
+// responds to DoCommand verbs to override the loop. See CLAUDE.md and
+// NOTES.md for the longer-term plan.
 package motionconstraints
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
 
 	commonpb "go.viam.com/api/common/v1"
+	pb "go.viam.com/api/service/worldstatestore/v1"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/services/worldstatestore"
+	"go.viam.com/rdk/spatialmath"
 )
 
 // Model is the resource model registered by this module.
 var Model = resource.NewModel("viam", "example-motion-constraints-go", "planner")
 
-// Defaults applied when the corresponding config field is absent.
 const (
 	DefaultIntervalS  = 3.0
+	DefaultPreviewS   = 1.0
 	DefaultTickHz     = 30.0
 	maxTickHz         = 30.0
 	subscriberBufSize = 256
 )
 
-// Built-in preset keys. The implementations land in Phase 4 (single arm) and
-// Phase 7 (the rest). They're enumerated here so DoCommand `list` can report
-// the planned catalog and validate user input before scenarios exist.
 var builtinPresets = []string{
 	"single_arm_obstacle",
 	"linear_constraint",
@@ -53,8 +53,9 @@ func init() {
 }
 
 // service is the world_state_store implementation. State, subscribers, and
-// the tick goroutine live here; the motion-planning helpers will hang off
-// this struct as later phases land.
+// the scenario loop live here. Field access is protected by `mu` except
+// where noted (the subscriber channels themselves are safe for concurrent
+// send via the non-blocking broadcast).
 type service struct {
 	resource.Named
 
@@ -63,24 +64,34 @@ type service struct {
 	mu  sync.Mutex
 	cfg *Config
 
+	// Active scene entities, keyed by UUID-as-string. Each entry carries
+	// the live transform so initial-burst can replay it to new subscribers
+	// and removeUUIDs can emit a REMOVED that round-trips correctly.
+	scene map[string]*commonpb.Transform
+
+	// Active subscribers. broadcastLocked walks this slice.
 	subscribers []chan worldstatestore.TransformChange
 
-	// Tick goroutine control. Each Reconfigure cancels the prior tick and
-	// (if loop mode is enabled) starts a fresh one.
+	// Scenario loop control.
 	tickCancel context.CancelFunc
 	tickDone   chan struct{}
+	advanceSig chan struct{} // buffered cap-1; `next`/`run` poke this
 
-	// Resolved dependencies. Empty until Phase 4 wires actual usage.
+	// Resolved dependencies.
+	deps *resolved
+
+	// Cached config values.
 	armNames      []string
 	motionService string
-
-	// Resolved tick rate. Capped at maxTickHz.
-	tickHz float64
-
-	// Loop control. When paused, the tick still runs but does not advance
-	// the scenario cursor. Phase 4+ behavior; in Phase 2 the tick is a no-op.
-	loop   bool
-	paused bool
+	tickHz        float64
+	intervalS     float64
+	previewS      float64
+	loop          bool
+	paused        bool
+	presets       []string
+	// pinnedScenario, if non-empty, is run exactly once before the loop
+	// resumes — set by DoCommand `run`.
+	pinnedScenario string
 }
 
 func newService(
@@ -90,30 +101,35 @@ func newService(
 	logger logging.Logger,
 ) (worldstatestore.Service, error) {
 	s := &service{
-		Named:  conf.ResourceName().AsNamed(),
-		logger: logger,
-		tickHz: DefaultTickHz,
-		loop:   true,
+		Named:      conf.ResourceName().AsNamed(),
+		logger:     logger,
+		scene:      map[string]*commonpb.Transform{},
+		tickHz:     DefaultTickHz,
+		intervalS:  DefaultIntervalS,
+		previewS:   DefaultPreviewS,
+		loop:       true,
+		advanceSig: make(chan struct{}, 1),
 	}
-	// Go's module.ModularMain does not auto-call Reconfigure for services,
-	// so we trigger it explicitly. This matches the sibling
-	// example-visualizations-go module's quirk.
 	if err := s.Reconfigure(ctx, deps, conf); err != nil {
 		return nil, err
 	}
 	return s, nil
 }
 
-// Reconfigure (re)parses the config, restarts the tick goroutine, and notifies
-// existing subscribers of the new world. In Phase 2 the "new world" is empty
-// so no transform changes are emitted; in Phase 4+ this is where REMOVED for
-// the prior scenario's entities + ADDED for the new world will fire.
+// Reconfigure (re)parses the config, refreshes the resolved dependency set,
+// restarts the scenario loop, and notifies existing subscribers of the new
+// world. Subscribers see REMOVED for prior scene entities + ADDED for fresh
+// ones (the latter happens as scenarios run).
 func (s *service) Reconfigure(
 	ctx context.Context,
-	_ resource.Dependencies,
+	deps resource.Dependencies,
 	conf resource.Config,
 ) error {
 	cfg, err := resource.NativeConfig[*Config](conf)
+	if err != nil {
+		return err
+	}
+	r, err := resolveDeps(deps, cfg, s.logger)
 	if err != nil {
 		return err
 	}
@@ -121,29 +137,52 @@ func (s *service) Reconfigure(
 	s.mu.Lock()
 	prevCancel := s.tickCancel
 	prevDone := s.tickDone
+
+	// Snapshot the prior scene so we can emit REMOVED on reconfigure.
+	priorScene := s.scene
+	s.scene = map[string]*commonpb.Transform{}
 	s.cfg = cfg
+	s.deps = r
 	s.armNames = append(s.armNames[:0], cfg.Arms...)
 	s.motionService = cfg.MotionService
 
 	if cfg.TickHz > 0 {
 		s.tickHz = cfg.TickHz
+		if s.tickHz > maxTickHz {
+			s.tickHz = maxTickHz
+		}
 	} else {
 		s.tickHz = DefaultTickHz
 	}
-	if s.tickHz > maxTickHz {
-		s.tickHz = maxTickHz
+	if cfg.IntervalS > 0 {
+		s.intervalS = cfg.IntervalS
+	} else {
+		s.intervalS = DefaultIntervalS
 	}
-
+	s.previewS = DefaultPreviewS
 	if cfg.Loop != nil {
 		s.loop = *cfg.Loop
 	} else {
 		s.loop = true
 	}
 	s.paused = false
+	if len(cfg.Presets) > 0 {
+		s.presets = append(s.presets[:0], cfg.Presets...)
+	} else {
+		s.presets = []string{"single_arm_obstacle"}
+	}
+	s.pinnedScenario = ""
+
+	// Emit REMOVED for prior scene entities so existing subscribers don't
+	// see ghosts from a previous configuration.
+	for _, t := range priorScene {
+		s.broadcastLocked(worldstatestore.TransformChange{
+			ChangeType: pb.TransformChangeType_TRANSFORM_CHANGE_TYPE_REMOVED,
+			Transform:  t,
+		})
+	}
 	s.mu.Unlock()
 
-	// Stop the prior tick outside the lock so a tick goroutine that is mid-
-	// broadcast can drain without deadlocking.
 	if prevCancel != nil {
 		prevCancel()
 		<-prevDone
@@ -151,37 +190,51 @@ func (s *service) Reconfigure(
 
 	tickCtx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
-
 	s.mu.Lock()
 	s.tickCancel = cancel
 	s.tickDone = done
 	s.mu.Unlock()
-
-	go s.runTick(tickCtx, done)
+	go s.runLoop(tickCtx, done)
 
 	s.logger.Infow("example-motion-constraints-go (re)configured",
 		"name", conf.ResourceName().Name,
 		"arms", s.armNames,
 		"motion_service", s.motionService,
 		"tick_hz", s.tickHz,
+		"interval_s", s.intervalS,
 		"loop", s.loop,
-		"presets", cfg.Presets,
+		"presets", s.presets,
 	)
 	return nil
 }
 
-// Close stops the tick goroutine and tears down all active subscribers.
+// Close stops the scenario loop, emits REMOVED for any remaining scene
+// entities, and tears down all subscribers.
 func (s *service) Close(ctx context.Context) error {
 	s.mu.Lock()
 	cancel := s.tickCancel
 	done := s.tickDone
 	subs := s.subscribers
 	s.subscribers = nil
+	scene := s.scene
+	s.scene = map[string]*commonpb.Transform{}
 	s.mu.Unlock()
 
 	if cancel != nil {
 		cancel()
 		<-done
+	}
+	for _, t := range scene {
+		change := worldstatestore.TransformChange{
+			ChangeType: pb.TransformChangeType_TRANSFORM_CHANGE_TYPE_REMOVED,
+			Transform:  t,
+		}
+		for _, ch := range subs {
+			select {
+			case ch <- change:
+			default:
+			}
+		}
 	}
 	for _, ch := range subs {
 		close(ch)
@@ -189,43 +242,191 @@ func (s *service) Close(ctx context.Context) error {
 	return nil
 }
 
-// runTick is the scenario-driver loop. Phase 2 is a no-op heartbeat that
-// logs once per minute so we can confirm the goroutine survives reconfigures.
-// Phase 4+ replaces the body with the scenario state machine.
-func (s *service) runTick(ctx context.Context, done chan struct{}) {
+// runLoop is the scenario driver. It cycles through configured presets,
+// running each one and pausing between iterations. DoCommand verbs poke
+// `advanceSig` to wake it up out-of-band.
+func (s *service) runLoop(ctx context.Context, done chan struct{}) {
 	defer close(done)
-	heartbeat := time.NewTicker(60 * time.Second)
-	defer heartbeat.Stop()
+	cursor := 0
 	for {
+		if ctx.Err() != nil {
+			return
+		}
+
+		s.mu.Lock()
+		paused := s.paused
+		loop := s.loop
+		pinned := s.pinnedScenario
+		s.pinnedScenario = ""
+		presets := append([]string{}, s.presets...)
+		interval := s.intervalS
+		s.mu.Unlock()
+
+		var key string
+		switch {
+		case pinned != "":
+			key = pinned
+		case paused:
+			if !s.sleepCancelable(ctx, time.Second) {
+				return
+			}
+			continue
+		case len(presets) == 0:
+			if !s.sleepCancelable(ctx, time.Second) {
+				return
+			}
+			continue
+		default:
+			if cursor >= len(presets) {
+				if !loop {
+					if !s.sleepCancelable(ctx, time.Second) {
+						return
+					}
+					continue
+				}
+				cursor = 0
+			}
+			key = presets[cursor]
+			cursor++
+		}
+
+		scn := presetByKey(key)
+		if scn == nil {
+			s.logger.Infow("scenario not implemented; skipping", "key", key)
+			continue
+		}
+
+		s.logger.Infow("running scenario", "key", key)
+		uuids, err := s.runScenario(ctx, *scn)
+		if err != nil {
+			s.logger.Warnw("scenario failed", "key", key, "err", err)
+		}
+		// Wait the inter-scenario interval, but allow next/run to interrupt.
 		select {
 		case <-ctx.Done():
+			s.removeUUIDs(uuids)
 			return
-		case <-heartbeat.C:
-			s.logger.Debugw("tick heartbeat", "phase", "2-skeleton")
+		case <-time.After(time.Duration(interval * float64(time.Second))):
+		case <-s.advanceSig:
+		}
+		s.removeUUIDs(uuids)
+	}
+}
+
+func (s *service) sleepCancelable(ctx context.Context, d time.Duration) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(d):
+		return true
+	case <-s.advanceSig:
+		return true
+	}
+}
+
+// emitADDED constructs and broadcasts an ADDED transform. The geometry is
+// stored in the scene map so it can be re-emitted to late subscribers and
+// removed on demand. pose is in world coordinates; refFrame is the parent
+// frame the renderer should attach the entity to (almost always "world").
+func (s *service) emitADDED(
+	uuid []byte,
+	pose spatialmath.Pose,
+	geom *commonpb.Geometry,
+	color *Color,
+	opacity *float64,
+) error {
+	if pose == nil {
+		pose = spatialmath.NewZeroPose()
+	}
+	tf := &commonpb.Transform{
+		Uuid:           uuid,
+		ReferenceFrame: stringFromBytes(uuid),
+		PoseInObserverFrame: &commonpb.PoseInFrame{
+			ReferenceFrame: "world",
+			Pose:           poseToPB(pose),
+		},
+		PhysicalObject: geom,
+		Metadata: buildMetadata(metadataOpts{
+			Color:   color,
+			Opacity: opacity,
+		}),
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.scene[string(uuid)] = tf
+	s.broadcastLocked(worldstatestore.TransformChange{
+		ChangeType: pb.TransformChangeType_TRANSFORM_CHANGE_TYPE_ADDED,
+		Transform:  tf,
+	})
+	return nil
+}
+
+// emitREMOVED retires an entity by UUID. Returns nil even if the entity
+// was already removed; this verb is meant to be safely retryable.
+func (s *service) emitREMOVED(uuid []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	tf, ok := s.scene[string(uuid)]
+	if !ok {
+		return nil
+	}
+	delete(s.scene, string(uuid))
+	s.broadcastLocked(worldstatestore.TransformChange{
+		ChangeType: pb.TransformChangeType_TRANSFORM_CHANGE_TYPE_REMOVED,
+		Transform:  tf,
+	})
+	return nil
+}
+
+// stringFromBytes returns a plain string copy of a UUID byte slice. We
+// stamp it onto Transform.ReferenceFrame so the viewer has a readable
+// identifier even when the UUID has non-printable bytes.
+func stringFromBytes(b []byte) string {
+	return string(b)
+}
+
+// broadcastLocked sends a change to every subscriber, non-blocking. Caller
+// must hold s.mu.
+func (s *service) broadcastLocked(change worldstatestore.TransformChange) {
+	for _, ch := range s.subscribers {
+		select {
+		case ch <- change:
+		default:
+			s.logger.Warnw("subscriber queue full; dropping change",
+				"change_type", change.ChangeType.String())
 		}
 	}
 }
 
-// ListUUIDs returns the UUIDs of all transforms currently being published.
-// Phase 2 publishes nothing.
+// ListUUIDs returns the UUIDs of every entity currently in the scene.
 func (s *service) ListUUIDs(ctx context.Context, extra map[string]any) ([][]byte, error) {
-	return nil, nil
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([][]byte, 0, len(s.scene))
+	for _, tf := range s.scene {
+		out = append(out, tf.Uuid)
+	}
+	return out, nil
 }
 
-// GetTransform returns the transform for a given UUID. Phase 2 has none.
+// GetTransform fetches a single entity by UUID. Returns nil if absent.
 func (s *service) GetTransform(
 	ctx context.Context,
 	uuid []byte,
 	extra map[string]any,
 ) (*commonpb.Transform, error) {
-	return nil, nil
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	tf, ok := s.scene[string(uuid)]
+	if !ok {
+		return nil, nil
+	}
+	return tf, nil
 }
 
-// StreamTransformChanges registers a subscriber and streams add/update/remove
-// events. The Phase 2 implementation establishes the fanout machinery but
-// emits nothing until scenarios are wired up. Subscribers automatically
-// receive an initial burst of ADDED events for every currently-visible entity
-// in Phase 4+.
+// StreamTransformChanges registers a subscriber. The subscriber receives an
+// initial burst of ADDED events for the current scene followed by live
+// changes as scenarios run.
 func (s *service) StreamTransformChanges(
 	ctx context.Context,
 	extra map[string]any,
@@ -233,21 +434,27 @@ func (s *service) StreamTransformChanges(
 	ch := make(chan worldstatestore.TransformChange, subscriberBufSize)
 
 	s.mu.Lock()
+	// Initial burst.
+	for _, tf := range s.scene {
+		select {
+		case ch <- worldstatestore.TransformChange{
+			ChangeType: pb.TransformChangeType_TRANSFORM_CHANGE_TYPE_ADDED,
+			Transform:  tf,
+		}:
+		default:
+			s.logger.Warnw("subscriber join: initial burst dropped event")
+		}
+	}
 	s.subscribers = append(s.subscribers, ch)
 	s.mu.Unlock()
 
-	// Tear-down goroutine: when the caller's context cancels, remove this
-	// subscriber from the fanout list and close its channel.
 	go func() {
 		<-ctx.Done()
 		s.removeSubscriber(ch)
 	}()
-
 	return worldstatestore.NewTransformChangeStreamFromChannel(ctx, ch), nil
 }
 
-// removeSubscriber removes ch from the subscriber list and closes it.
-// Safe to call from any goroutine.
 func (s *service) removeSubscriber(target chan worldstatestore.TransformChange) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -260,30 +467,15 @@ func (s *service) removeSubscriber(target chan worldstatestore.TransformChange) 
 	}
 }
 
-// broadcastLocked sends a transform change to every active subscriber with a
-// non-blocking select; a full channel logs a warning and drops the event.
-// Caller must hold s.mu.
-func (s *service) broadcastLocked(change worldstatestore.TransformChange) {
-	for _, ch := range s.subscribers {
-		select {
-		case ch <- change:
-		default:
-			s.logger.Warnw("subscriber queue full; dropping change",
-				"change_type", change.ChangeType.String())
-		}
-	}
-}
-
-// DoCommand exposes runtime control of the scenario loop.
+// DoCommand is the manual-control surface for scenarios.
 //
 // Verbs:
-//   - {"command":"list"}                                  → returns the catalog of built-in preset keys
-//   - {"command":"status"}                                → returns current loop state (paused, tick_hz, arms, motion_service)
-//   - {"command":"pause"}                                 → stops scenario advancement (no-op until scenarios exist)
-//   - {"command":"resume"}                                → resumes scenario advancement
-//   - {"command":"clear"}                                 → removes every entity currently in the scene
-//   - {"command":"run","scenario":"<key>"}                → runs a specific preset once (Phase 4+ implements)
-//   - {"command":"next"}                                  → advances to the next scenario in the loop (Phase 4+ implements)
+//   - {"command":"list"}                    → returns the catalog of built-in preset keys
+//   - {"command":"status"}                  → returns current loop state
+//   - {"command":"pause"} / "resume"        → toggles scenario advancement
+//   - {"command":"clear"}                   → emits REMOVED for every scene entity
+//   - {"command":"run","scenario":"<key>"}  → runs a specific preset on the next loop iteration
+//   - {"command":"next"}                    → skips the inter-scenario sleep and advances now
 func (s *service) DoCommand(
 	ctx context.Context,
 	cmd map[string]any,
@@ -294,25 +486,24 @@ func (s *service) DoCommand(
 		presets := append([]string{}, builtinPresets...)
 		sort.Strings(presets)
 		return map[string]any{
-			"presets": presets,
-			"note":    "scenario implementations land in phase 4+; listing reports the planned catalog",
+			"presets":     presets,
+			"implemented": []string{"single_arm_obstacle"},
 		}, nil
 
 	case "status":
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		configured := []string{}
-		if s.cfg != nil {
-			configured = append(configured, s.cfg.Presets...)
-		}
 		return map[string]any{
-			"phase":          "2-skeleton",
-			"paused":         s.paused,
-			"loop":           s.loop,
-			"tick_hz":        s.tickHz,
-			"arms":           append([]string{}, s.armNames...),
-			"motion_service": s.motionService,
-			"presets":        configured,
+			"phase":           "4-single-arm",
+			"paused":          s.paused,
+			"loop":            s.loop,
+			"tick_hz":         s.tickHz,
+			"interval_s":      s.intervalS,
+			"arms":            append([]string{}, s.armNames...),
+			"motion_service":  s.motionService,
+			"presets":         append([]string{}, s.presets...),
+			"pinned_scenario": s.pinnedScenario,
+			"scene_count":     len(s.scene),
 		}, nil
 
 	case "pause":
@@ -325,23 +516,49 @@ func (s *service) DoCommand(
 		s.mu.Lock()
 		s.paused = false
 		s.mu.Unlock()
+		s.poke()
 		return map[string]any{"paused": false}, nil
 
 	case "clear":
-		// Phase 2 has no scene entities; this returns success so callers can
-		// safely script `clear` between runs. Phase 4+ will emit REMOVED
-		// changes for every active entity.
-		return map[string]any{"cleared": 0}, nil
+		s.mu.Lock()
+		count := len(s.scene)
+		uuids := make([][]byte, 0, count)
+		for k := range s.scene {
+			uuids = append(uuids, []byte(k))
+		}
+		s.mu.Unlock()
+		for _, u := range uuids {
+			_ = s.emitREMOVED(u)
+		}
+		return map[string]any{"cleared": count}, nil
 
-	case "run", "next":
-		return map[string]any{
-			"error": "scenarios not implemented yet; see NOTES.md OQ1/OQ2 (Phase 3 spike)",
-			"verb":  verb,
-		}, nil
+	case "run":
+		key, _ := cmd["scenario"].(string)
+		if key == "" {
+			return nil, fmt.Errorf("missing 'scenario' field on run command")
+		}
+		if presetByKey(key) == nil {
+			return nil, fmt.Errorf("scenario %q is not implemented yet", key)
+		}
+		s.mu.Lock()
+		s.pinnedScenario = key
+		s.mu.Unlock()
+		s.poke()
+		return map[string]any{"queued": key}, nil
+
+	case "next":
+		s.poke()
+		return map[string]any{"advanced": true}, nil
 
 	default:
-		return map[string]any{
-			"error": "unrecognized command; try one of: list, status, pause, resume, clear, run, next",
-		}, nil
+		return nil, fmt.Errorf("unrecognized command %q; try one of: list, status, pause, resume, clear, run, next", verb)
+	}
+}
+
+// poke wakes runLoop without filling the buffer.
+func (s *service) poke() {
+	select {
+	case s.advanceSig <- struct{}{}:
+	default:
 	}
 }

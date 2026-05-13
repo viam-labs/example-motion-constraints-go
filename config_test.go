@@ -3,19 +3,29 @@ package motionconstraints
 import (
 	"strings"
 	"testing"
+
+	"go.viam.com/rdk/robot/framesystem"
 )
 
-// emptyConfigPasses confirms that an empty config validates and reports no
-// dependencies. The module ships with a working empty-config startup so the
-// registry can verify it loads before any machine-config attributes exist.
+// fsDep is the always-included framesystem dependency. Helper to keep test
+// expectations readable as the dep list grows.
+var fsDep = framesystem.PublicServiceName.String()
+
+// emptyConfigPasses confirms that an empty config validates and reports
+// only the auto-included framesystem dependency. The module ships with a
+// working empty-config startup so the registry can verify it loads before
+// any machine-config attributes exist.
 func TestValidate_EmptyConfigPasses(t *testing.T) {
 	c := &Config{}
 	deps, optional, err := c.Validate("svc.attributes")
 	if err != nil {
 		t.Fatalf("empty config should validate, got %v", err)
 	}
-	if len(deps) != 0 || len(optional) != 0 {
-		t.Fatalf("empty config should report no deps, got deps=%v optional=%v", deps, optional)
+	if len(deps) != 1 || deps[0] != fsDep {
+		t.Fatalf("empty config should depend only on the framesystem service, got %v", deps)
+	}
+	if len(optional) != 0 {
+		t.Fatalf("expected no optional deps, got %v", optional)
 	}
 }
 
@@ -28,7 +38,12 @@ func TestValidate_DepsIncludeArmsAndMotionService(t *testing.T) {
 	if err != nil {
 		t.Fatalf("valid config should not error: %v", err)
 	}
-	want := map[string]bool{"builtin-motion": true, "arm_nw": true, "arm_ne": true}
+	want := map[string]bool{
+		"builtin-motion": true,
+		"arm_nw":         true,
+		"arm_ne":         true,
+		fsDep:            true,
+	}
 	if len(deps) != len(want) {
 		t.Fatalf("expected %d deps, got %d (%v)", len(want), len(deps), deps)
 	}
