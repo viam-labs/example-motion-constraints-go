@@ -1,0 +1,77 @@
+{
+  "modules": [
+    {
+      "type": "registry",
+      "name": "motion-demo",
+      "module_id": "viam:example-motion-constraints-go"
+    }
+  ],
+  "components": [
+    {
+      "name": "arm_nw",
+      "api": "rdk:component:arm",
+      "model": "rdk:builtin:fake",
+      "attributes": { "arm-model": "ur5e" },
+      "frame": {
+        "parent": "world",
+        "translation": { "x": -400, "y": 400, "z": 0 }
+      }
+    },
+    {
+      "name": "arm_ne",
+      "api": "rdk:component:arm",
+      "model": "rdk:builtin:fake",
+      "attributes": { "arm-model": "ur7e" },
+      "frame": {
+        "parent": "world",
+        "translation": { "x": 400, "y": 400, "z": 0 }
+      }
+    },
+    {
+      "name": "arm_sw",
+      "api": "rdk:component:arm",
+      "model": "rdk:builtin:fake",
+      "attributes": { "arm-model": "xarm6" },
+      "frame": {
+        "parent": "world",
+        "translation": { "x": -400, "y": -400, "z": 0 }
+      }
+    },
+    {
+      "name": "arm_se",
+      "api": "rdk:component:arm",
+      "model": "rdk:builtin:fake",
+      "attributes": { "arm-model": "xarm7" },
+      "frame": {
+        "parent": "world",
+        "translation": { "x": 400, "y": -400, "z": 0 }
+      }
+    }
+  ],
+  "services": [
+    {
+      "name": "builtin-motion",
+      "type": "motion",
+      "model": "rdk:builtin:builtin"
+    },
+    {
+      "name": "demo",
+      "type": "world_state_store",
+      "model": "viam:example-motion-constraints-go:planner",
+      "depends_on": ["arm_nw", "arm_ne", "arm_sw", "arm_se", "builtin-motion"],
+      "attributes": {
+        "motion_service": "builtin-motion",
+        "arms": ["arm_nw", "arm_ne", "arm_sw", "arm_se"],
+        "loop": true,
+        "interval_s": 3,
+        "presets": [
+          "single_arm_obstacle",
+          "linear_constraint",
+          "orientation_constraint",
+          "dynamic_obstacle",
+          "multi_arm_choreography"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+bin/
+module.tar.gz
+*.test
+.idea/
+.vscode/
