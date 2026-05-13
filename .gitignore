@@ -3,3 +3,4 @@ module.tar.gz
 *.test
 .idea/
 .vscode/
+/spike
