@@ -11,7 +11,7 @@
       "name": "arm_nw",
       "api": "rdk:component:arm",
       "model": "rdk:builtin:simulated",
-      "attributes": { "arm-model": "ur5e" },
+      "attributes": { "arm-model": "ur5e", "simulate-time": true },
       "frame": {
         "parent": "world",
         "translation": { "x": -400, "y": 400, "z": 0 }
@@ -21,7 +21,7 @@
       "name": "arm_ne",
       "api": "rdk:component:arm",
       "model": "rdk:builtin:simulated",
-      "attributes": { "arm-model": "ur7e" },
+      "attributes": { "arm-model": "ur7e", "simulate-time": true },
       "frame": {
         "parent": "world",
         "translation": { "x": 400, "y": 400, "z": 0 }
@@ -31,7 +31,7 @@
       "name": "arm_sw",
       "api": "rdk:component:arm",
       "model": "rdk:builtin:simulated",
-      "attributes": { "arm-model": "xarm6" },
+      "attributes": { "arm-model": "xarm6", "simulate-time": true },
       "frame": {
         "parent": "world",
         "translation": { "x": -400, "y": -400, "z": 0 }
@@ -41,7 +41,7 @@
       "name": "arm_se",
       "api": "rdk:component:arm",
       "model": "rdk:builtin:simulated",
-      "attributes": { "arm-model": "xarm7" },
+      "attributes": { "arm-model": "xarm7", "simulate-time": true },
       "frame": {
         "parent": "world",
         "translation": { "x": 400, "y": -400, "z": 0 }

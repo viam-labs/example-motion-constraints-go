@@ -11,7 +11,7 @@
       "name": "arm0",
       "api": "rdk:component:arm",
       "model": "rdk:builtin:simulated",
-      "attributes": { "arm-model": "ur5e" },
+      "attributes": { "arm-model": "ur5e", "simulate-time": true },
       "frame": {
         "parent": "world",
         "translation": { "x": 0, "y": 0, "z": 0 }

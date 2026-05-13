@@ -87,10 +87,11 @@ func (s *service) runScenario(ctx context.Context, scn Scenario) (addedUUIDs [][
 	for _, ob := range obstacles {
 		uuid := []byte("obstacle:" + ob.label())
 		obPose := ob.Geom.Pose()
+		obPoint := obPose.Point()
 		log.Infow("scenario: emit obstacle",
 			"uuid", string(uuid),
 			"label", ob.label(),
-			"pose", obPose.Point(),
+			"xyz", []float64{obPoint.X, obPoint.Y, obPoint.Z},
 		)
 		if err := s.emitADDED(uuid, obPose, geomToVizProto(ob.Geom), ob.Color, opacityPtr(0.85)); err != nil {
 			log.Errorw("scenario: emit obstacle failed", "label", ob.label(), "err", err)
@@ -131,10 +132,12 @@ func (s *service) runScenario(ctx context.Context, scn Scenario) (addedUUIDs [][
 		first := path[0][armName]
 		last := path[len(path)-1][armName]
 		if first != nil {
-			log.Infow("scenario: path first", "frame", first.Parent(), "xyz", first.Pose().Point())
+			p := first.Pose().Point()
+			log.Infow("scenario: path first", "frame", first.Parent(), "xyz", []float64{p.X, p.Y, p.Z})
 		}
 		if last != nil {
-			log.Infow("scenario: path last", "frame", last.Parent(), "xyz", last.Pose().Point())
+			p := last.Pose().Point()
+			log.Infow("scenario: path last", "frame", last.Parent(), "xyz", []float64{p.X, p.Y, p.Z})
 		}
 	}
 	previewUUIDs := s.emitTrajectoryGhosts(armName, path)
@@ -289,10 +292,10 @@ func planSingleArmToPose(
 		startInputs[name] = make([]referenceframe.Input, len(f.DoF()))
 	}
 	if log != nil {
+		gp := goal.Point()
 		log.Infow("plan: built request",
 			"arm", armName,
-			"goal_xyz", goal.Point(),
-			"goal_ov", goal.Orientation().OrientationVectorDegrees(),
+			"goal_xyz", []float64{gp.X, gp.Y, gp.Z},
 			"start_frames", keysOfFrameSystemInputs(startInputs),
 			"obstacles", len(obstacles),
 		)
