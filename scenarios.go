@@ -74,14 +74,26 @@ func (s *service) runScenario(ctx context.Context, scn Scenario) (addedUUIDs [][
 		return nil, fmt.Errorf("dependencies not yet resolved")
 	}
 
+	log := s.logger
+	log.Infow("scenario: setup begin", "key", scn.Key, "preview_s", previewSec)
+
 	// Setup: emit obstacles.
 	obstacles, err := scn.Setup(ctx, r)
 	if err != nil {
+		log.Errorw("scenario: setup failed", "key", scn.Key, "err", err)
 		return nil, fmt.Errorf("setup: %w", err)
 	}
+	log.Infow("scenario: setup produced obstacles", "key", scn.Key, "count", len(obstacles))
 	for _, ob := range obstacles {
 		uuid := []byte("obstacle:" + ob.label())
-		if err := s.emitADDED(uuid, ob.Geom.Pose(), geomToVizProto(ob.Geom), ob.Color, opacityPtr(0.85)); err != nil {
+		obPose := ob.Geom.Pose()
+		log.Infow("scenario: emit obstacle",
+			"uuid", string(uuid),
+			"label", ob.label(),
+			"pose", obPose.Point(),
+		)
+		if err := s.emitADDED(uuid, obPose, geomToVizProto(ob.Geom), ob.Color, opacityPtr(0.85)); err != nil {
+			log.Errorw("scenario: emit obstacle failed", "label", ob.label(), "err", err)
 			return nil, fmt.Errorf("emit obstacle %s: %w", ob.label(), err)
 		}
 		addedUUIDs = append(addedUUIDs, uuid)
@@ -90,14 +102,18 @@ func (s *service) runScenario(ctx context.Context, scn Scenario) (addedUUIDs [][
 	// Build the FrameSystem and plan.
 	fs, err := buildFrameSystem(ctx, r)
 	if err != nil {
+		log.Errorw("scenario: build frame system failed", "err", err)
 		return addedUUIDs, fmt.Errorf("build frame system: %w", err)
 	}
+	log.Infow("scenario: frame system built", "frames", fs.FrameNames())
 	armName, plan, err := scn.Plan(ctx, r, fs, obstacles)
 	if err != nil {
+		log.Errorw("scenario: plan failed", "err", err)
 		return addedUUIDs, fmt.Errorf("plan: %w", err)
 	}
 	armRes, ok := r.arms[armName]
 	if !ok {
+		log.Errorw("scenario: unknown arm returned by Plan", "arm", armName, "configured_arms", r.armOrder)
 		return addedUUIDs, fmt.Errorf("plan returned unknown arm %q", armName)
 	}
 
@@ -106,8 +122,24 @@ func (s *service) runScenario(ctx context.Context, scn Scenario) (addedUUIDs [][
 	// planner (often just start+goal); Phase 5 will densify.
 	path := plan.Path()
 	traj := plan.Trajectory()
+	log.Infow("scenario: plan succeeded",
+		"arm", armName,
+		"path_points", len(path),
+		"trajectory_steps", len(traj),
+	)
+	if len(path) > 0 {
+		first := path[0][armName]
+		last := path[len(path)-1][armName]
+		if first != nil {
+			log.Infow("scenario: path first", "frame", first.Parent(), "xyz", first.Pose().Point())
+		}
+		if last != nil {
+			log.Infow("scenario: path last", "frame", last.Parent(), "xyz", last.Pose().Point())
+		}
+	}
 	previewUUIDs := s.emitTrajectoryGhosts(armName, path)
 	addedUUIDs = append(addedUUIDs, previewUUIDs...)
+	log.Infow("scenario: ghost trail emitted", "count", len(previewUUIDs))
 
 	// Pause briefly so a human eye sees the ghost trail before motion.
 	if previewSec > 0 {
@@ -119,17 +151,23 @@ func (s *service) runScenario(ctx context.Context, scn Scenario) (addedUUIDs [][
 	}
 
 	// Execute the joint waypoints. MoveThroughJointPositions is the
-	// minimal-overhead way to drive a fake arm through the plan; a real
-	// arm would benefit from arm.MoveOptions for blending.
+	// minimal-overhead way to drive a simulated arm through the plan;
+	// real hardware would benefit from arm.MoveOptions for blending.
 	armInputs, err := traj.GetFrameInputs(armName)
 	if err != nil {
+		log.Errorw("scenario: extract inputs failed", "arm", armName, "err", err)
 		return addedUUIDs, fmt.Errorf("extract %q inputs: %w", armName, err)
 	}
+	log.Infow("scenario: executing", "arm", armName, "waypoints", len(armInputs))
 	if len(armInputs) > 1 {
 		// Skip the seed configuration; pass only forward-going waypoints.
 		if err := armRes.MoveThroughJointPositions(ctx, armInputs[1:], nil, nil); err != nil {
+			log.Errorw("scenario: execute failed", "arm", armName, "err", err)
 			return addedUUIDs, fmt.Errorf("execute on %q: %w", armName, err)
 		}
+		log.Infow("scenario: executed", "arm", armName)
+	} else {
+		log.Warnw("scenario: trajectory too short to execute", "arm", armName, "waypoints", len(armInputs))
 	}
 
 	// Tear down the ghost trail. Obstacles remain on screen so the user
@@ -226,6 +264,7 @@ func planSingleArmToPose(
 	if !ok {
 		return nil, fmt.Errorf("arm %q not in dependencies", armName)
 	}
+	log := r.logger
 	// The arm's frame name in the framesystem matches the configured
 	// component name. The kinematic model's primary output frame is the
 	// arm's name in our case (matches viam-server's convention).
@@ -233,7 +272,31 @@ func planSingleArmToPose(
 	if err != nil {
 		return nil, fmt.Errorf("current joints on %q: %w", armName, err)
 	}
+	// Build start inputs for EVERY moving frame in the system. If we omit
+	// any moving frame's seed, validatePlanRequest rejects the request.
 	startInputs := referenceframe.FrameSystemInputs{armName: current}
+	for _, name := range fs.FrameNames() {
+		if name == armName {
+			continue
+		}
+		if _, has := startInputs[name]; has {
+			continue
+		}
+		f := fs.Frame(name)
+		if f == nil || len(f.DoF()) == 0 {
+			continue
+		}
+		startInputs[name] = make([]referenceframe.Input, len(f.DoF()))
+	}
+	if log != nil {
+		log.Infow("plan: built request",
+			"arm", armName,
+			"goal_xyz", goal.Point(),
+			"goal_ov", goal.Orientation().OrientationVectorDegrees(),
+			"start_frames", keysOfFrameSystemInputs(startInputs),
+			"obstacles", len(obstacles),
+		)
+	}
 
 	// Wrap obstacles into world-frame GeometriesInFrame for collision.
 	geomList := make([]spatialmath.Geometry, 0, len(obstacles))
@@ -265,9 +328,23 @@ func planSingleArmToPose(
 	if logger == nil {
 		logger = logging.NewLogger("motionconstraints.plan")
 	}
-	plan, _, err := armplanning.PlanMotion(ctx, logger, req)
+	plan, meta, err := armplanning.PlanMotion(ctx, logger, req)
 	if err != nil {
+		logger.Errorw("plan: PlanMotion error", "err", err)
 		return nil, err
 	}
+	logger.Infow("plan: PlanMotion ok",
+		"duration", meta.Duration,
+		"path_points", len(plan.Path()),
+		"traj_steps", len(plan.Trajectory()),
+	)
 	return plan, nil
+}
+
+func keysOfFrameSystemInputs(m referenceframe.FrameSystemInputs) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }

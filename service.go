@@ -358,9 +358,33 @@ func (s *service) emitADDED(
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, exists := s.scene[string(uuid)]; exists {
+		s.logger.Debugw("emitADDED skipped (UUID already in scene)", "uuid", string(uuid))
 		return nil
 	}
 	s.scene[string(uuid)] = tf
+	geomKind := "unknown"
+	if geom != nil {
+		switch geom.GeometryType.(type) {
+		case *commonpb.Geometry_Box:
+			geomKind = "box"
+		case *commonpb.Geometry_Sphere:
+			geomKind = "sphere"
+		case *commonpb.Geometry_Capsule:
+			geomKind = "capsule"
+		case *commonpb.Geometry_Mesh:
+			geomKind = "mesh"
+		}
+	}
+	pb_pose := tf.PoseInObserverFrame.GetPose()
+	s.logger.Infow("emitADDED",
+		"uuid", string(uuid),
+		"geom_kind", geomKind,
+		"geom_label", geom.GetLabel(),
+		"parent_frame", tf.PoseInObserverFrame.GetReferenceFrame(),
+		"pose_xyz", []float64{pb_pose.GetX(), pb_pose.GetY(), pb_pose.GetZ()},
+		"subscribers", len(s.subscribers),
+		"scene_count", len(s.scene),
+	)
 	s.broadcastLocked(worldstatestore.TransformChange{
 		ChangeType: pb.TransformChangeType_TRANSFORM_CHANGE_TYPE_ADDED,
 		Transform:  tf,
@@ -378,6 +402,7 @@ func (s *service) emitREMOVED(uuid []byte) error {
 		return nil
 	}
 	delete(s.scene, string(uuid))
+	s.logger.Infow("emitREMOVED", "uuid", string(uuid), "scene_count", len(s.scene))
 	s.broadcastLocked(worldstatestore.TransformChange{
 		ChangeType: pb.TransformChangeType_TRANSFORM_CHANGE_TYPE_REMOVED,
 		Transform:  tf,
@@ -442,22 +467,27 @@ func (s *service) StreamTransformChanges(
 
 	s.mu.Lock()
 	// Initial burst.
+	burst := 0
 	for _, tf := range s.scene {
 		select {
 		case ch <- worldstatestore.TransformChange{
 			ChangeType: pb.TransformChangeType_TRANSFORM_CHANGE_TYPE_ADDED,
 			Transform:  tf,
 		}:
+			burst++
 		default:
 			s.logger.Warnw("subscriber join: initial burst dropped event")
 		}
 	}
 	s.subscribers = append(s.subscribers, ch)
+	sCount := len(s.subscribers)
 	s.mu.Unlock()
+	s.logger.Infow("subscriber joined", "subscribers", sCount, "initial_burst", burst)
 
 	go func() {
 		<-ctx.Done()
 		s.removeSubscriber(ch)
+		s.logger.Infow("subscriber left")
 	}()
 	return worldstatestore.NewTransformChangeStreamFromChannel(ctx, ch), nil
 }

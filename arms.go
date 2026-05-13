@@ -60,6 +60,13 @@ func resolveDeps(deps resource.Dependencies, cfg *Config, logger logging.Logger)
 		out.motion = ms
 	}
 
+	if logger != nil {
+		logger.Infow("resolveDeps: arms resolved",
+			"arms", out.armOrder,
+			"motion_service_configured", cfg.MotionService != "",
+		)
+	}
+
 	// The framesystem service is auto-injected for modules under the
 	// public name "$framesystem". It's the entry point to obtaining a
 	// *referenceframe.FrameSystem we can pass to armplanning.PlanMotion.
