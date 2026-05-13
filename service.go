@@ -301,15 +301,16 @@ func (s *service) runLoop(ctx context.Context, done chan struct{}) {
 		if err != nil {
 			s.logger.Warnw("scenario failed", "key", key, "err", err)
 		}
-		// Wait the inter-scenario interval, but allow next/run to interrupt.
+		// Hold the obstacles on screen during the inter-scenario interval.
+		// They're idempotent (same UUID) on re-emit, so this just leaves
+		// the scene populated until the user actively clears it.
+		_ = uuids
 		select {
 		case <-ctx.Done():
-			s.removeUUIDs(uuids)
 			return
 		case <-time.After(time.Duration(interval * float64(time.Second))):
 		case <-s.advanceSig:
 		}
-		s.removeUUIDs(uuids)
 	}
 }
 
@@ -328,6 +329,9 @@ func (s *service) sleepCancelable(ctx context.Context, d time.Duration) bool {
 // stored in the scene map so it can be re-emitted to late subscribers and
 // removed on demand. pose is in world coordinates; refFrame is the parent
 // frame the renderer should attach the entity to (almost always "world").
+//
+// If the UUID is already present in the scene map, emitADDED is a no-op —
+// callers can safely re-invoke each scenario iteration without flicker.
 func (s *service) emitADDED(
 	uuid []byte,
 	pose spatialmath.Pose,
@@ -353,6 +357,9 @@ func (s *service) emitADDED(
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if _, exists := s.scene[string(uuid)]; exists {
+		return nil
+	}
 	s.scene[string(uuid)] = tf
 	s.broadcastLocked(worldstatestore.TransformChange{
 		ChangeType: pb.TransformChangeType_TRANSFORM_CHANGE_TYPE_ADDED,

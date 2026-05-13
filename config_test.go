@@ -1,7 +1,6 @@
 package motionconstraints
 
 import (
-	"strings"
 	"testing"
 
 	"go.viam.com/rdk/robot/framesystem"
@@ -54,19 +53,22 @@ func TestValidate_DepsIncludeArmsAndMotionService(t *testing.T) {
 	}
 }
 
-// ArmsWithoutMotionService is a likely misconfiguration: the user intends to
-// plan motion but forgot to declare the motion service dependency. We catch
-// this at validate time so the user sees the issue before the service starts.
-func TestValidate_ArmsWithoutMotionServiceErrors(t *testing.T) {
-	c := &Config{
-		Arms: []string{"arm0"},
+// motion_service is optional — we use armplanning.PlanMotion directly,
+// so configurations that omit it must still validate successfully.
+func TestValidate_ArmsWithoutMotionServiceOK(t *testing.T) {
+	c := &Config{Arms: []string{"arm0"}}
+	deps, _, err := c.Validate("svc.attributes")
+	if err != nil {
+		t.Fatalf("arms without motion_service should validate, got %v", err)
 	}
-	_, _, err := c.Validate("svc.attributes")
-	if err == nil {
-		t.Fatal("arms without motion_service should error")
+	want := map[string]bool{"arm0": true, fsDep: true}
+	if len(deps) != len(want) {
+		t.Fatalf("expected %d deps (arm + framesystem), got %d (%v)", len(want), len(deps), deps)
 	}
-	if !strings.Contains(err.Error(), "motion_service") {
-		t.Errorf("error should mention motion_service, got %q", err.Error())
+	for _, d := range deps {
+		if !want[d] {
+			t.Errorf("unexpected dep %q", d)
+		}
 	}
 }
 

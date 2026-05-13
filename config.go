@@ -1,8 +1,6 @@
 package motionconstraints
 
 import (
-	"errors"
-
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/robot/framesystem"
 )
@@ -54,10 +52,9 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 	// (so framesystem.FromDependencies succeeds inside Reconfigure).
 	deps = append(deps, framesystem.PublicServiceName.String())
 
-	if len(c.Arms) > 0 && c.MotionService == "" {
-		return deps, nil, errors.New(
-			path + ": arms configured but motion_service is required for planning")
-	}
+	// motion_service is optional. We don't actually call it for the
+	// scripted scenarios (we use armplanning.PlanMotion directly), so
+	// configurations that omit the service block entirely still work.
 
 	return deps, nil, nil
 }

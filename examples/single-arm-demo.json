@@ -10,7 +10,7 @@
     {
       "name": "arm0",
       "api": "rdk:component:arm",
-      "model": "rdk:builtin:fake",
+      "model": "rdk:builtin:simulated",
       "attributes": { "arm-model": "ur5e" },
       "frame": {
         "parent": "world",
@@ -20,17 +20,11 @@
   ],
   "services": [
     {
-      "name": "builtin-motion",
-      "type": "motion",
-      "model": "rdk:builtin:builtin"
-    },
-    {
       "name": "demo",
       "type": "world_state_store",
       "model": "viam:example-motion-constraints-go:planner",
-      "depends_on": ["arm0", "builtin-motion"],
+      "depends_on": ["arm0"],
       "attributes": {
-        "motion_service": "builtin-motion",
         "arms": ["arm0"],
         "loop": true,
         "interval_s": 3,
