@@ -38,6 +38,77 @@ const (
 	subscriberBufSize      = 256
 )
 
+// PresetBundles maps a friendly bundle name to a canonical
+// (arm-name -> preset-key) mapping. Used when the service config sets
+// the `preset_set` attribute. Each bundle assumes a specific arm-naming
+// convention in the machine config (arm_a1..a4 for row A, etc.); arms
+// missing from the machine config are silently skipped.
+var PresetBundles = map[string]map[string]string{
+	// row A only: four arms demonstrating EE-control-frame variations.
+	"ee_only": {
+		"arm_a1": "random_translation",
+		"arm_a2": "random_rotation",
+		"arm_a3": "random_translation",
+		"arm_a4": "random_rotation",
+	},
+	// rows A + AB: the same four EE variations plus linear-constraint
+	// counterparts for side-by-side comparison. This is the default —
+	// the most pedagogically self-contained subset that exercises the
+	// task-space lever without thrashing CPU on 16 simultaneous plans.
+	"ee_variations": {
+		"arm_a1":  "random_translation",
+		"arm_a2":  "random_rotation",
+		"arm_a3":  "random_translation",
+		"arm_a4":  "random_rotation",
+		"arm_ab1": "random_translation_linear",
+		"arm_ab2": "random_rotation_linear",
+		"arm_ab3": "random_translation_linear",
+		"arm_ab4": "random_rotation_linear",
+	},
+	// row B: obstacle-geometry variations (arc over / duck under /
+	// gripper-with-box / corridor pass-through).
+	"obstacle_geometry": {
+		"arm_b1": "arc_over_obstacle",
+		"arm_b2": "duck_under_obstacle",
+		"arm_b3": "gripper_with_box",
+		"arm_b4": "corridor_passthrough",
+	},
+	// row C: constraint and dynamic-obstacle variations.
+	"constraint_types": {
+		"arm_c1": "linear_constraint",
+		"arm_c2": "orientation_constraint",
+		"arm_c3": "dynamic_obstacle",
+		"arm_c4": "dynamic_obstacle",
+	},
+	// every preset across every row. Heavy: 16 simultaneous plans.
+	"all": {
+		"arm_a1": "random_translation", "arm_a2": "random_rotation",
+		"arm_a3": "random_translation", "arm_a4": "random_rotation",
+		"arm_ab1": "random_translation_linear", "arm_ab2": "random_rotation_linear",
+		"arm_ab3": "random_translation_linear", "arm_ab4": "random_rotation_linear",
+		"arm_b1": "arc_over_obstacle", "arm_b2": "duck_under_obstacle",
+		"arm_b3": "gripper_with_box", "arm_b4": "corridor_passthrough",
+		"arm_c1": "linear_constraint", "arm_c2": "orientation_constraint",
+		"arm_c3": "dynamic_obstacle", "arm_c4": "dynamic_obstacle",
+	},
+}
+
+// DefaultPresetSet is used when neither arm_scenarios nor preset_set is
+// supplied. Picked to keep the demo lightweight (8 arms) while showing
+// the EE-frame and linear-constraint comparison side-by-side.
+const DefaultPresetSet = "ee_variations"
+
+// RowDescriptions are human-readable labels for the conceptual rows in
+// the grid demo. Surfaced via DoCommand `list` so users can identify
+// which row a given preset belongs to.
+var RowDescriptions = map[string]string{
+	"ee_only":           "End-Effector Control Frame Variations",
+	"ee_variations":     "EE Control Frames + Linear Constraint Comparison",
+	"obstacle_geometry": "Obstacle Geometry Variations",
+	"constraint_types":  "Constraint and Dynamic-Obstacle Variations",
+	"all":               "All Variations (heaviest)",
+}
+
 var builtinPresets = []string{
 	"single_arm_obstacle",
 	"linear_constraint",
@@ -219,11 +290,27 @@ func (s *service) Reconfigure(
 		s.presets = []string{"single_arm_obstacle"}
 	}
 	s.armScenarios = nil
-	if len(cfg.ArmScenarios) > 0 {
+	// Resolution order: explicit ArmScenarios > named PresetSet >
+	// DefaultPresetSet. Bundles are filtered against the configured
+	// arms — arms in the bundle that aren't declared in the machine
+	// config silently drop out.
+	switch {
+	case len(cfg.ArmScenarios) > 0:
 		s.armScenarios = make(map[string]string, len(cfg.ArmScenarios))
 		for k, v := range cfg.ArmScenarios {
 			s.armScenarios[k] = v
 		}
+	case cfg.PresetSet != "":
+		bundle, ok := PresetBundles[cfg.PresetSet]
+		if !ok {
+			s.logger.Warnw("unknown preset_set; falling back to default",
+				"requested", cfg.PresetSet, "default", DefaultPresetSet)
+			bundle = PresetBundles[DefaultPresetSet]
+		}
+		s.armScenarios = filterBundleToConfiguredArms(bundle, cfg.Arms)
+	default:
+		s.armScenarios = filterBundleToConfiguredArms(
+			PresetBundles[DefaultPresetSet], cfg.Arms)
 	}
 	s.pinnedScenario = ""
 
@@ -754,9 +841,26 @@ func (s *service) DoCommand(
 	case "list":
 		presets := append([]string{}, builtinPresets...)
 		sort.Strings(presets)
+		// Also include the named bundles + their human-readable row
+		// descriptions so callers can pick a preset_set without
+		// reading the source.
+		bundles := map[string]any{}
+		for k, v := range PresetBundles {
+			arms := make([]string, 0, len(v))
+			for arm := range v {
+				arms = append(arms, arm)
+			}
+			sort.Strings(arms)
+			bundles[k] = map[string]any{
+				"description": RowDescriptions[k],
+				"arms":        arms,
+			}
+		}
 		return map[string]any{
 			"presets":     presets,
-			"implemented": presets, // all built-in presets are implemented
+			"implemented": presets,
+			"bundles":     bundles,
+			"default":     DefaultPresetSet,
 		}, nil
 
 	case "status":
@@ -857,6 +961,30 @@ func (s *service) DoCommand(
 	default:
 		return nil, fmt.Errorf("unrecognized command %q; try one of: list, status, pause, resume, clear, run, next", verb)
 	}
+}
+
+// filterBundleToConfiguredArms returns a copy of the bundle containing
+// only arms that appear in the configured arms list. Lets a customer
+// pick a heavy bundle (e.g. "all") without first declaring every arm.
+func filterBundleToConfiguredArms(bundle map[string]string, configuredArms []string) map[string]string {
+	if len(configuredArms) == 0 {
+		out := make(map[string]string, len(bundle))
+		for k, v := range bundle {
+			out[k] = v
+		}
+		return out
+	}
+	configured := make(map[string]struct{}, len(configuredArms))
+	for _, name := range configuredArms {
+		configured[name] = struct{}{}
+	}
+	out := make(map[string]string)
+	for k, v := range bundle {
+		if _, ok := configured[k]; ok {
+			out[k] = v
+		}
+	}
+	return out
 }
 
 // poke wakes runLoop without filling the buffer.

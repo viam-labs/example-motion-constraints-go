@@ -38,6 +38,14 @@ type Config struct {
 	// arm's own kinematic-chain output frame (i.e. the arm name).
 	EEFrames map[string]string `json:"ee_frames,omitempty"`
 
+	// PresetSet selects a named bundle of (arm, scenario) mappings
+	// shipped with the module. Set this instead of ArmScenarios for the
+	// common case of "I want the canonical demo for these rows". Valid
+	// values: "ee_variations" (rows A+AB, default), "obstacle_geometry"
+	// (row B), "constraint_types" (row C), "ee_only" (row A), "all"
+	// (every preset). ArmScenarios still wins if both are set.
+	PresetSet string `json:"preset_set,omitempty"`
+
 	// AbortOnCollision: if a pre-flight collision check trips, skip execution.
 	AbortOnCollision *bool `json:"abort_on_collision,omitempty"`
 
