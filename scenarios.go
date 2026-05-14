@@ -69,6 +69,7 @@ func (s *service) runScenario(ctx context.Context, scn Scenario) (addedUUIDs [][
 	s.mu.Lock()
 	r := s.deps
 	previewSec := s.previewS
+	density := s.previewDensity
 	s.mu.Unlock()
 	if r == nil {
 		return nil, fmt.Errorf("dependencies not yet resolved")
@@ -140,9 +141,10 @@ func (s *service) runScenario(ctx context.Context, scn Scenario) (addedUUIDs [][
 			log.Infow("scenario: path last", "frame", last.Parent(), "xyz", []float64{p.X, p.Y, p.Z})
 		}
 	}
-	previewUUIDs := s.emitTrajectoryGhosts(armName, path)
+	previewUUIDs := s.emitDenseTrajectoryGhosts(armName, traj, fs, density)
 	addedUUIDs = append(addedUUIDs, previewUUIDs...)
-	log.Infow("scenario: ghost trail emitted", "count", len(previewUUIDs))
+	log.Infow("scenario: ghost trail emitted", "count", len(previewUUIDs), "density", density)
+	_ = path // path is still useful for diagnostics; ghosts come from traj now
 
 	// Pause briefly so a human eye sees the ghost trail before motion.
 	if previewSec > 0 {
@@ -184,28 +186,103 @@ func (s *service) runScenario(ctx context.Context, scn Scenario) (addedUUIDs [][
 	return addedUUIDs, nil
 }
 
-// emitTrajectoryGhosts publishes one faint sphere per cartesian waypoint of
-// the moving arm and returns the UUIDs so the caller can remove them later.
-// Uses versioned UUIDs so the viewer treats each frame's ghost as fresh
-// (avoids cache-related ADDED-after-REMOVED ambiguity).
-func (s *service) emitTrajectoryGhosts(armName string, path motionplan.Path) [][]byte {
-	out := make([][]byte, 0, len(path))
+// emitDenseTrajectoryGhosts publishes the cartesian EE path the arm will
+// actually follow, by interpolating joint inputs between consecutive
+// planner-returned trajectory steps and transforming each substep through
+// the FrameSystem. This is far more useful than emitting one sphere per
+// planner keyframe — the default planner often returns 2-step trajectories
+// (start, goal) which would otherwise show only the endpoints.
+//
+// `density` is the number of interpolated samples per segment, including
+// the segment endpoints (so density=15 produces 14 evenly-spaced inner
+// samples plus the endpoint between any two waypoints).
+//
+// Returns the UUIDs of every emitted ghost so the caller can clear them.
+func (s *service) emitDenseTrajectoryGhosts(
+	armName string,
+	traj motionplan.Trajectory,
+	fs *referenceframe.FrameSystem,
+	density int,
+) [][]byte {
+	if density < 1 {
+		density = 1
+	}
+	if len(traj) < 1 {
+		return nil
+	}
+
+	out := make([][]byte, 0, len(traj)*density)
 	ts := time.Now().UnixMilli()
-	radius := 12.0
+	radius := 8.0
 	color := ColorTrajectory
-	opacity := opacityPtr(0.45)
-	for i, step := range path {
-		pif, ok := step[armName]
-		if !ok {
-			continue
+	opacity := opacityPtr(0.4)
+	counter := 0
+	emit := func(inputs referenceframe.FrameSystemInputs) {
+		pose, err := eePoseFromInputs(fs, inputs, armName)
+		if err != nil || pose == nil {
+			return
 		}
-		uuid := []byte(fmt.Sprintf("traj:%s:%d:%d", armName, ts, i))
-		pose := pif.Pose()
-		label := fmt.Sprintf("traj_%s_%d", armName, i)
+		uuid := []byte(fmt.Sprintf("traj:%s:%d:%d", armName, ts, counter))
+		label := fmt.Sprintf("traj_%s_%d", armName, counter)
 		if err := s.emitADDED(uuid, pose, sphereGeometry(radius, label), &color, opacity); err != nil {
-			continue
+			return
 		}
 		out = append(out, uuid)
+		counter++
+	}
+
+	// First waypoint (start configuration).
+	emit(traj[0])
+	for i := 1; i < len(traj); i++ {
+		prev := traj[i-1]
+		curr := traj[i]
+		for k := 1; k <= density; k++ {
+			t := float64(k) / float64(density)
+			emit(lerpInputs(prev, curr, t))
+		}
+	}
+	return out
+}
+
+// eePoseFromInputs returns the cartesian world-frame pose of the named
+// frame given a full FrameSystemInputs map. Used to derive the EE position
+// from interpolated joint values for ghost-trajectory rendering.
+func eePoseFromInputs(
+	fs *referenceframe.FrameSystem,
+	inputs referenceframe.FrameSystemInputs,
+	frameName string,
+) (spatialmath.Pose, error) {
+	tf, err := fs.Transform(
+		inputs.ToLinearInputs(),
+		referenceframe.NewPoseInFrame(frameName, spatialmath.NewZeroPose()),
+		referenceframe.World,
+	)
+	if err != nil {
+		return nil, err
+	}
+	pif, ok := tf.(*referenceframe.PoseInFrame)
+	if !ok {
+		return nil, fmt.Errorf("expected PoseInFrame from fs.Transform, got %T", tf)
+	}
+	return pif.Pose(), nil
+}
+
+// lerpInputs linearly interpolates two FrameSystemInputs maps at parameter
+// t in [0,1]. Any frame missing from either input is skipped (no entry in
+// the output) — the caller must supply matched maps from a single Plan.
+func lerpInputs(a, b referenceframe.FrameSystemInputs, t float64) referenceframe.FrameSystemInputs {
+	out := referenceframe.FrameSystemInputs{}
+	for name, av := range a {
+		bv, ok := b[name]
+		if !ok || len(bv) != len(av) {
+			out[name] = av
+			continue
+		}
+		mixed := make([]referenceframe.Input, len(av))
+		for i := range av {
+			mixed[i] = av[i] + referenceframe.Input(t*(float64(bv[i])-float64(av[i])))
+		}
+		out[name] = mixed
 	}
 	return out
 }

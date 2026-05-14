@@ -28,6 +28,12 @@ type Config struct {
 
 	// TickHz is the visualization tick rate. Default 30; max 30.
 	TickHz float64 `json:"tick_hz,omitempty"`
+
+	// PreviewDensity is the number of interpolated joint samples to take
+	// between consecutive planner-returned waypoints when rendering the
+	// ghost trajectory. Higher = smoother trail; lower = lighter scene.
+	// Default 15. Set to 1 to fall back to keyframes-only.
+	PreviewDensity int `json:"preview_density,omitempty"`
 }
 
 // Validate is called by the resource graph when the service is (re)configured.

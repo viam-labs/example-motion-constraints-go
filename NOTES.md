@@ -68,4 +68,17 @@ _Reserved — populate as we identify issues that should go upstream._
 
 ## Improvements deferred
 
-_Reserved — features we noticed but didn't ship yet._
+### Add `obstacle_progression` preset (queued 2026-05-13)
+
+A 6th preset that reuses `single_arm_obstacle`'s anchor poses but cycles the obstacle set across iterations. Pedagogically valuable: shows the planner producing visibly different trajectories as constraints accumulate.
+
+Proposed iteration sequence:
+1. Box only — baseline (same as `single_arm_obstacle`).
+2. Box + floor plane at z=-5 (a `5000 × 5000 × 10` box).
+3. Box + floor + ceiling plane at z=900.
+4. Box + floor + ceiling + side walls.
+5. Loop back to step 1.
+
+Pairs naturally with Phase 6 red-tint — when the planner runs out of room, expect "no plan found" errors and we get to demonstrate the collision-highlight feature in earnest.
+
+Slot: Phase 7 alongside the four planned presets. No new APIs needed — `spatialmath.NewBox` covers floor/ceiling/walls since RDK has no Plane primitive.

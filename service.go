@@ -29,11 +29,12 @@ import (
 var Model = resource.NewModel("viam", "example-motion-constraints-go", "planner")
 
 const (
-	DefaultIntervalS  = 3.0
-	DefaultPreviewS   = 1.0
-	DefaultTickHz     = 30.0
-	maxTickHz         = 30.0
-	subscriberBufSize = 256
+	DefaultIntervalS       = 3.0
+	DefaultPreviewS        = 1.0
+	DefaultTickHz          = 30.0
+	DefaultPreviewDensity  = 15
+	maxTickHz              = 30.0
+	subscriberBufSize      = 256
 )
 
 var builtinPresets = []string{
@@ -83,9 +84,10 @@ type service struct {
 	// Cached config values.
 	armNames      []string
 	motionService string
-	tickHz        float64
-	intervalS     float64
-	previewS      float64
+	tickHz          float64
+	intervalS       float64
+	previewS        float64
+	previewDensity  int
 	loop          bool
 	paused        bool
 	presets       []string
@@ -160,6 +162,11 @@ func (s *service) Reconfigure(
 		s.intervalS = DefaultIntervalS
 	}
 	s.previewS = DefaultPreviewS
+	if cfg.PreviewDensity > 0 {
+		s.previewDensity = cfg.PreviewDensity
+	} else {
+		s.previewDensity = DefaultPreviewDensity
+	}
 	if cfg.Loop != nil {
 		s.loop = *cfg.Loop
 	} else {
