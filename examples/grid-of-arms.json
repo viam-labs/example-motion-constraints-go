@@ -103,24 +103,7 @@
           "arm_b1", "arm_b2", "arm_b3", "arm_b4",
           "arm_c1", "arm_c2", "arm_c3", "arm_c4"
         ],
-        "arm_scenarios": {
-          "arm_a1": "random_translation",
-          "arm_a2": "random_rotation",
-          "arm_a3": "random_translation",
-          "arm_a4": "random_rotation",
-          "arm_ab1": "random_translation_linear",
-          "arm_ab2": "random_rotation_linear",
-          "arm_ab3": "random_translation_linear",
-          "arm_ab4": "random_rotation_linear",
-          "arm_b1": "arc_over_obstacle",
-          "arm_b2": "duck_under_obstacle",
-          "arm_b3": "gripper_with_box",
-          "arm_b4": "corridor_passthrough",
-          "arm_c1": "linear_constraint",
-          "arm_c2": "orientation_constraint",
-          "arm_c3": "dynamic_obstacle",
-          "arm_c4": "dynamic_obstacle"
-        },
+        "preset_set": "ee_variations",
         "ee_frames": {
           "arm_a3": "gripper_a3",
           "arm_a4": "gripper_a4",
