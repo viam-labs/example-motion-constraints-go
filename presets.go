@@ -404,23 +404,22 @@ func presetRandomRotation() Scenario {
 	const (
 		posX, posY, posZ = 500.0, 0.0, 400.0
 	)
-	// Orientation goals as Theta twists around the default tool axis
-	// (OZ = +1, the identity direction). Picking variants of identity
-	// keeps the arm's wrist near its natural workspace posture for
-	// forward goals — earlier "point straight down" goals (OZ = -1)
-	// required ur5e to do a full wrist flip from zero-config, which
-	// the IK solver couldn't find a continuous solution for and the
-	// arm got stuck. Twists around the tool axis are kinematically
-	// easy for the planner and visibly different cycle-to-cycle.
+	// Mix of tool-axis twists and small pointing-direction tilts so the
+	// motion is visibly different cycle-to-cycle. All tilts stay near
+	// the identity orientation (OZ ~ +1) — bigger tilts of 30deg or
+	// less keep the IK well away from the wrist-flip singularities
+	// that stuck the arm at startup. Without a gripper offset, pure
+	// theta-only twists are nearly invisible (just the last joint
+	// rotating), so tilts give the wrist something to actually do.
 	orientations := []*spatialmath.OrientationVectorDegrees{
 		{OX: 0, OY: 0, OZ: 1, Theta: 0},
-		{OX: 0, OY: 0, OZ: 1, Theta: 45},
-		{OX: 0, OY: 0, OZ: 1, Theta: 90},
-		{OX: 0, OY: 0, OZ: 1, Theta: 135},
-		{OX: 0, OY: 0, OZ: 1, Theta: 180},
-		{OX: 0, OY: 0, OZ: 1, Theta: -135},
-		{OX: 0, OY: 0, OZ: 1, Theta: -90},
-		{OX: 0, OY: 0, OZ: 1, Theta: -45},
+		{OX: 0.3, OY: 0, OZ: 0.95, Theta: 0},
+		{OX: 0, OY: 0.3, OZ: 0.95, Theta: 0},
+		{OX: -0.3, OY: 0, OZ: 0.95, Theta: 0},
+		{OX: 0, OY: -0.3, OZ: 0.95, Theta: 0},
+		{OX: 0.2, OY: 0.2, OZ: 0.96, Theta: 60},
+		{OX: -0.2, OY: 0.2, OZ: 0.96, Theta: -60},
+		{OX: 0, OY: 0, OZ: 1, Theta: 120},
 	}
 	var counter int64
 

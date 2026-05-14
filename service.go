@@ -290,6 +290,15 @@ func (s *service) Reconfigure(
 	} else {
 		s.presets = []string{"single_arm_obstacle"}
 	}
+	// Clear per-arm diagnostics so stale entries from a prior config
+	// don't leak into the "stats" verb. Without this, switching from a
+	// 12-arm bundle to a 4-arm bundle leaves the 8 dropped arms looking
+	// "errored" or "planning" in stats forever.
+	s.cycleCount = map[string]int64{}
+	s.lastStageByArm = map[string]string{}
+	s.lastStageAtByArm = map[string]time.Time{}
+	s.lastErrorByArm = map[string]string{}
+
 	s.armScenarios = nil
 	// Resolution order: explicit ArmScenarios > named PresetSet >
 	// DefaultPresetSet. Bundles are filtered against the configured
