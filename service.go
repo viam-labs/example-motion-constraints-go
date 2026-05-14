@@ -1087,8 +1087,10 @@ func (s *service) emitArmLabelMeshes() {
 	}
 	const (
 		labelHeightMM = 35    // matches scripts/generate_text_assets.py
-		labelForwardY = -800.0 // distance in front of the arm (-Y from base)
-		labelZ        = 200.0  // off the floor so the multi-line plaque is fully visible
+		// Place the plaque at the arm's X/Y position, hanging slightly
+		// below the arm's mount Z so it reads as a podium plaque under
+		// the arm rather than floating in space behind it.
+		labelZ = -100.0
 	)
 	for armName, scenarioKey := range scenarios {
 		base := deps.armBase(armName)
@@ -1103,8 +1105,8 @@ func (s *service) emitArmLabelMeshes() {
 		bp := base.Point()
 		pose := spatialmath.NewPoseFromPoint(r3.Vector{
 			X: bp.X,
-			Y: bp.Y + labelForwardY,
-			Z: labelZ,
+			Y: bp.Y,
+			Z: bp.Z + labelZ,
 		})
 		uuid := []byte("label:" + armName)
 		if err := s.emitLabelMesh(uuid, pose, label, labelHeightMM); err != nil {

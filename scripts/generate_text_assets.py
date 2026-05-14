@@ -37,10 +37,10 @@ LABEL_DEPTH_MM = 2.0
 LINE_SPACING = 1.4  # multiplier on per-line cap height for line gap
 
 LABELS = [
-    "Translation Only\nConstraint: None\nCollidables: Self Only",
-    "Rotation Only\nConstraint: None\nCollidables: Self Only",
-    "Translation Only\nConstraint: None\nCollidables: Self + Tool",
-    "Rotation Only\nConstraint: None\nCollidables: Self + Tool",
+    "Arm Only\nTranslation Only\nConstraint: None\nCollidables: Self Only",
+    "Arm Only\nRotation Only\nConstraint: None\nCollidables: Self Only",
+    "Arm + Gripper\nTranslation Only\nConstraint: None\nCollidables: Self + Tool",
+    "Arm + Gripper\nRotation Only\nConstraint: None\nCollidables: Self + Tool",
 ]
 
 
