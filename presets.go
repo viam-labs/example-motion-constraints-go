@@ -106,19 +106,19 @@ func presetSingleArmObstacle() Scenario {
 // ---- linear_constraint -----------------------------------------------------
 
 func presetLinearConstraint() Scenario {
-	// No obstacle in this scenario. The educational story is the shape
-	// of the EE trajectory under a line constraint vs an unconstrained
-	// plan — adding a box made the cbirrt planner consistently time out
-	// at 15s+ under concurrent load with no extra pedagogical value.
-	anchorA := r3.Vector{X: 500, Y: 400, Z: 400}
-	anchorB := r3.Vector{X: 500, Y: -400, Z: 400}
+	// Smaller swing + very loose tolerances so cbirrt converges fast.
+	// 800mm of straight-line cartesian motion under a 45deg orientation
+	// constraint was triggering IK-flip search hell that timed out the
+	// planner. A 300mm swing with 200mm line tolerance is solvable in
+	// well under 1s and still visibly different from an unconstrained
+	// plan (the trajectory looks like a near-straight line vs the
+	// natural curve cbirrt picks unconstrained).
+	anchorA := r3.Vector{X: 500, Y: 150, Z: 400}
+	anchorB := r3.Vector{X: 500, Y: -150, Z: 400}
 
-	// Tolerances loose enough for cbirrt to solve quickly. Tighten in a
-	// per-machine override (e.g. LineToleranceMm: 5) to see the planner
-	// give up and trigger the timeout pedagogy.
 	constraints := &motionplan.Constraints{
 		LinearConstraint: []motionplan.LinearConstraint{
-			{LineToleranceMm: 50, OrientationToleranceDegs: 45},
+			{LineToleranceMm: 200, OrientationToleranceDegs: 90},
 		},
 	}
 	return Scenario{
@@ -134,14 +134,16 @@ func presetLinearConstraint() Scenario {
 // ---- orientation_constraint ------------------------------------------------
 
 func presetOrientationConstraint() Scenario {
-	// No obstacle — same rationale as linear_constraint. The constraint
-	// itself is the demo.
-	anchorA := r3.Vector{X: 500, Y: 400, Z: 400}
-	anchorB := r3.Vector{X: 500, Y: -400, Z: 400}
+	// Same shortening as linear_constraint — 300mm swing with a 90deg
+	// orientation tolerance. Still visibly constrained (the wrist holds
+	// roughly the same orientation across the swing) without forcing
+	// the planner through IK discontinuities.
+	anchorA := r3.Vector{X: 500, Y: 150, Z: 400}
+	anchorB := r3.Vector{X: 500, Y: -150, Z: 400}
 
 	constraints := &motionplan.Constraints{
 		OrientationConstraint: []motionplan.OrientationConstraint{
-			{OrientationToleranceDegs: 45},
+			{OrientationToleranceDegs: 90},
 		},
 	}
 	return Scenario{
