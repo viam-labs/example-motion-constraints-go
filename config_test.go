@@ -81,8 +81,8 @@ func TestValidate_NilConfigOK(t *testing.T) {
 }
 
 // BuiltinPresetsCatalog spot-checks the canonical preset key list. The DoCommand
-// `list` verb hands this catalog to callers before the scenario implementations
-// exist, so the list must stay in sync with NOTES.md / README.md.
+// `list` verb hands this catalog to callers, so the list must stay in sync
+// with README.md and the presetByKey switch.
 func TestBuiltinPresetsCatalog(t *testing.T) {
 	want := map[string]bool{
 		"single_arm_obstacle":    true,
@@ -90,6 +90,7 @@ func TestBuiltinPresetsCatalog(t *testing.T) {
 		"orientation_constraint": true,
 		"dynamic_obstacle":       true,
 		"multi_arm_choreography": true,
+		"obstacle_progression":   true,
 	}
 	if len(builtinPresets) != len(want) {
 		t.Fatalf("preset catalog size drift: got %v", builtinPresets)
@@ -97,6 +98,9 @@ func TestBuiltinPresetsCatalog(t *testing.T) {
 	for _, k := range builtinPresets {
 		if !want[k] {
 			t.Errorf("unexpected preset key %q", k)
+		}
+		if presetByKey(k) == nil {
+			t.Errorf("preset %q listed but presetByKey returns nil", k)
 		}
 	}
 }

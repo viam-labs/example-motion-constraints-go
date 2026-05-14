@@ -42,11 +42,12 @@ The service config lives under the service's `attributes` block:
 
 | Key | What it shows |
 | --- | --- |
-| `single_arm_obstacle` | One arm plans around one fixed box. |
-| `linear_constraint` | Same start/goal twice — once unconstrained, once with a tight straight-line tolerance. Both trajectories rendered side-by-side. |
-| `orientation_constraint` | EE moves through a path while holding orientation fixed (pouring motion). |
-| `dynamic_obstacle` | A box oscillates across the planned path; the arm must replan mid-execution. |
-| `multi_arm_choreography` | 2×2 grid of mixed-model arms reach toward a shared center, treating each other as obstacles. |
+| `single_arm_obstacle` | One arm swings back and forth around a static box obstacle. |
+| `linear_constraint` | The same anchor swing, but the planner must hold the EE on a straight line (LinearConstraint, 10mm tolerance). Often produces visibly different — or impossible — solutions. |
+| `orientation_constraint` | Holds EE orientation within 15° while swinging (OrientationConstraint). Illustrates "pouring-style" motion. |
+| `dynamic_obstacle` | Same anchors; obstacle position cycles each iteration so the planner produces a different trajectory each cycle. Phase 8 will animate the obstacle on a per-tick basis. |
+| `multi_arm_choreography` | Every configured arm reaches toward a shared world point in round-robin order. Sibling arms are injected as world obstacles per plan call so the planner avoids them. Best with a 2×2 grid. |
+| `obstacle_progression` | Same anchors; obstacles accumulate each cycle (box, +floor, +ceiling, +walls). Shows the planner producing visibly different trajectories as constraints accumulate — and ultimately failing when the workspace clamps shut (red-tint payoff). |
 
 ## DoCommand verbs
 

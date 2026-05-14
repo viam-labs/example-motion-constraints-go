@@ -43,6 +43,7 @@ var builtinPresets = []string{
 	"orientation_constraint",
 	"dynamic_obstacle",
 	"multi_arm_choreography",
+	"obstacle_progression",
 }
 
 func init() {
@@ -567,7 +568,7 @@ func (s *service) DoCommand(
 		sort.Strings(presets)
 		return map[string]any{
 			"presets":     presets,
-			"implemented": []string{"single_arm_obstacle"},
+			"implemented": presets, // all built-in presets are implemented
 		}, nil
 
 	case "status":
