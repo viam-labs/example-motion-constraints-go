@@ -22,6 +22,9 @@ var (
 	ColorCollision = Color{R: 255, G: 0, B: 0}
 	// ColorGoal is the tint for goal markers.
 	ColorGoal = Color{R: 230, G: 180, B: 0}
+	// ColorArmTag is the high-contrast tint for the per-arm scenario
+	// label markers placed below each arm's mount.
+	ColorArmTag = Color{R: 255, G: 220, B: 80}
 )
 
 // metadataOpts collects the inputs to buildMetadata. Every field except
