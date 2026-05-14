@@ -673,17 +673,19 @@ func (s *service) emitADDED(
 
 // emitAxesMarker publishes a "reference frame" entity at the given pose —
 // the renderer draws a 3-axis triad (red X, green Y, blue Z) using the
-// metadata.show_axes_helper flag. The accompanying geometry is invisible
-// since the triad is the interesting part. UUIDs should be unique per
-// emission (the caller's ts:i scheme handles that).
+// metadata.show_axes_helper flag. UUIDs should be unique per emission
+// (the caller's ts:i scheme handles that).
+//
+// Note: the renderer hides the entire entity when invisible=true,
+// including the axes helper. So we leave invisible=false and ship a
+// very-small sphere as the placeholder geometry; the sphere is too
+// small to be distracting but keeps the entity "visible" so the axes
+// helper renders.
 func (s *service) emitAxesMarker(uuid []byte, pose spatialmath.Pose) error {
 	if pose == nil {
 		pose = spatialmath.NewZeroPose()
 	}
-	// A tiny invisible sphere keeps the geometry slot populated; the
-	// renderer reads pose from the Transform and the axes triad from
-	// metadata.show_axes_helper.
-	geom := sphereGeometry(1.0, stringFromBytes(uuid))
+	geom := sphereGeometry(3.0, stringFromBytes(uuid))
 	tf := &commonpb.Transform{
 		Uuid:           uuid,
 		ReferenceFrame: stringFromBytes(uuid),
@@ -693,7 +695,7 @@ func (s *service) emitAxesMarker(uuid []byte, pose spatialmath.Pose) error {
 		},
 		PhysicalObject: geom,
 		Metadata: buildMetadata(metadataOpts{
-			Invisible:      true,
+			Invisible:      false,
 			ShowAxesHelper: true,
 		}),
 	}
