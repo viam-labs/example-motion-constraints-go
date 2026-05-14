@@ -515,9 +515,14 @@ func presetRandomRotationLinear() Scenario {
 		{OX: 0, OY: 0, OZ: -1, Theta: 45},
 		{OX: 0, OY: 0, OZ: -1, Theta: -45},
 	}
+	// LinearConstraint here is degenerate (start == end position) and a
+	// tight tolerance makes the cbirrt planner thrash on the orientation
+	// interpolation between very different EE orientations. A loose
+	// 500mm tolerance is effectively position-fixed without forcing IK
+	// through singular configs.
 	constraints := &motionplan.Constraints{
 		LinearConstraint: []motionplan.LinearConstraint{
-			{LineToleranceMm: 100, OrientationToleranceDegs: 180},
+			{LineToleranceMm: 500, OrientationToleranceDegs: 180},
 		},
 	}
 	var counter int64

@@ -33,7 +33,7 @@ const (
 	DefaultIntervalS       = 3.0
 	DefaultPreviewS        = 1.0
 	DefaultTickHz          = 30.0
-	DefaultPreviewDensity  = 15
+	DefaultPreviewDensity  = 6
 	maxTickHz              = 30.0
 	subscriberBufSize      = 256
 )
@@ -516,20 +516,27 @@ func (s *service) runArmLoop(ctx context.Context, armName, scenarioKey string) {
 		s.logger.Warnw("runArmLoop: unknown scenario; arm idle", "arm", armName, "key", scenarioKey)
 		return
 	}
-	// One-time home move so scenarios don't start with the arm inside an
-	// obstacle. Failures here are non-fatal — log and continue, the first
-	// scenario plan will either succeed or report its own error.
-	s.mu.Lock()
-	deps := s.deps
-	s.mu.Unlock()
-	if deps != nil {
-		if armRes, ok := deps.arms[armName]; ok {
-			if model, err := armRes.Kinematics(ctx); err == nil && model != nil {
-				home := homeJointPositions(len(model.DoF()))
-				s.logger.Infow("home: moving arm to startup pose",
-					"arm", armName, "home", inputsToFloats(home))
-				if err := armRes.MoveToJointPositions(ctx, home, nil); err != nil {
-					s.logger.Warnw("home: move failed (will run anyway)", "arm", armName, "err", err)
+	// Conditional one-time home move. The home (j1, j3 = -90deg) is a
+	// safe tucked pose useful when a scenario's obstacles would overlap
+	// the arm's zero-config — currently only the row-B/C scenarios with
+	// boxes near the workspace. For row-A and row-AB scenarios (no
+	// obstacles, sometimes constraint-only), the home pose makes the
+	// first cycle's linear-constrained plan UNREACHABLE from the "candle"
+	// pose, leaving the arm stuck pointing straight up. Skip home for
+	// those.
+	if scenarioNeedsHome(scenarioKey) {
+		s.mu.Lock()
+		deps := s.deps
+		s.mu.Unlock()
+		if deps != nil {
+			if armRes, ok := deps.arms[armName]; ok {
+				if model, err := armRes.Kinematics(ctx); err == nil && model != nil {
+					home := homeJointPositions(len(model.DoF()))
+					s.logger.Infow("home: moving arm to startup pose",
+						"arm", armName, "scenario", scenarioKey, "home", inputsToFloats(home))
+					if err := armRes.MoveToJointPositions(ctx, home, nil); err != nil {
+						s.logger.Warnw("home: move failed (will run anyway)", "arm", armName, "err", err)
+					}
 				}
 			}
 		}
@@ -961,6 +968,26 @@ func (s *service) DoCommand(
 	default:
 		return nil, fmt.Errorf("unrecognized command %q; try one of: list, status, pause, resume, clear, run, next", verb)
 	}
+}
+
+// scenarioNeedsHome reports whether a preset's typical scene includes
+// obstacles near the arm's zero/home config. Used to gate the one-time
+// startup home move so unobstructed presets (row A, row AB) don't get
+// tucked into a "candle" pose from which their linear-constrained first
+// plan can't reach the first goal.
+func scenarioNeedsHome(scenarioKey string) bool {
+	switch scenarioKey {
+	case "single_arm_obstacle",
+		"arc_over_obstacle",
+		"duck_under_obstacle",
+		"gripper_with_box",
+		"corridor_passthrough",
+		"obstacle_progression",
+		"multi_arm_choreography",
+		"dynamic_obstacle":
+		return true
+	}
+	return false
 }
 
 // filterBundleToConfiguredArms returns a copy of the bundle containing
