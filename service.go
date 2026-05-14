@@ -1086,11 +1086,12 @@ func (s *service) emitArmLabelMeshes() {
 		return
 	}
 	const (
-		labelHeightMM = 35    // matches scripts/generate_text_assets.py
-		// Place the plaque at the arm's X/Y position, hanging slightly
-		// below the arm's mount Z so it reads as a podium plaque under
-		// the arm rather than floating in space behind it.
-		labelZ = -100.0
+		labelHeightMM = 35 // matches scripts/generate_text_assets.py
+		// Place the plaque well below the arm's mount so it sits clear
+		// of the arm body even when joints fold the arm into low
+		// configurations. The plaque is four lines tall (~200mm), so
+		// the BOTTOM of the plaque sits ~500mm below the arm base.
+		labelZ = -400.0
 	)
 	for armName, scenarioKey := range scenarios {
 		base := deps.armBase(armName)
