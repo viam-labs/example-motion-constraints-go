@@ -138,33 +138,45 @@ func presetOrientationConstraint() Scenario {
 
 // ---- dynamic_obstacle ------------------------------------------------------
 
-// presetDynamicObstacle keeps the same anchor pair but moves the obstacle
-// to a different position each cycle, so the planner produces visibly
-// different trajectories. Phase 8 will wire in actual time-domain
-// animation; this is the still-frame version.
+// presetDynamicObstacle has the obstacle continuously oscillate between
+// two world-frame poses while the arm swings between its anchor pair.
+// The plan is recomputed each scenario iteration using the obstacle's
+// pose at the moment of planning, so the visualization shows: planned
+// arc → arm executes → obstacle drifts away to a new spot → next plan
+// reroutes around the new position. Phase 8 wiring; Phase 6 collision
+// red-tint still fires if a snapshot is unlucky.
 func presetDynamicObstacle() Scenario {
 	anchorA := spatialmath.NewPoseFromPoint(r3.Vector{X: 500, Y: 300, Z: 400})
 	anchorB := spatialmath.NewPoseFromPoint(r3.Vector{X: 500, Y: -300, Z: 400})
 
-	// Three obstacle positions; cycle through them each iteration.
-	obstaclePositions := []r3.Vector{
-		{X: 400, Y: 0, Z: 350},
-		{X: 400, Y: 150, Z: 350},
-		{X: 400, Y: -150, Z: 350},
-	}
-	var counter int64
+	// The obstacle oscillates side-to-side across the arm's working volume.
+	obstacleAnimA := spatialmath.NewPoseFromPoint(r3.Vector{X: 400, Y: 200, Z: 350})
+	obstacleAnimB := spatialmath.NewPoseFromPoint(r3.Vector{X: 400, Y: -200, Z: 350})
 
 	return Scenario{
 		Key:         "dynamic_obstacle",
-		Description: "Same anchors, obstacle position cycles each iteration.",
+		Description: "Obstacle box oscillates continuously while the arm swings between anchors.",
 		Setup: func(ctx context.Context, r *resolved) ([]scenarioObstacle, error) {
-			idx := atomic.AddInt64(&counter, 1) - 1
-			pos := obstaclePositions[int(idx)%len(obstaclePositions)]
-			geom, err := staticBox("dynamic_obstacle:box", pos.X, pos.Y, pos.Z, 150, 150, 200)
+			// Start the obstacle at AnchorA; the animation tick will move
+			// it from there. We can't read s.advanceAnimations' current
+			// pose from inside the preset (the scenario doesn't have
+			// service handle), so the planner uses whatever pose was
+			// emitted most recently — close enough for educational use.
+			geom, err := staticBox("dynamic_obstacle:box",
+				obstacleAnimA.Point().X, obstacleAnimA.Point().Y, obstacleAnimA.Point().Z,
+				150, 150, 200,
+			)
 			if err != nil {
 				return nil, err
 			}
-			return []scenarioObstacle{{Geom: geom, Color: &ColorObstacle}}, nil
+			return []scenarioObstacle{{
+				Geom: geom, Color: &ColorObstacle,
+				Anim: &obstacleAnimation{
+					AnchorA: obstacleAnimA,
+					AnchorB: obstacleAnimB,
+					PeriodS: 6.0,
+				},
+			}}, nil
 		},
 		Plan: alternateBetweenAnchors("dynamic_obstacle", anchorA, anchorB, nil),
 	}

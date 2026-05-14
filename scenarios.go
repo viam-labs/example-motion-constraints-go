@@ -40,9 +40,15 @@ type Scenario struct {
 
 // scenarioObstacle is a single world-frame collision geometry plus its
 // visualization color. Geom contains its own pose (see spatialmath.Geometry).
+//
+// If Anim is non-nil, the service's animation tick goroutine continuously
+// updates the obstacle's pose via field-mask UPDATEs. The planner still
+// uses Geom.Pose() snapshot at the moment of planning — the motion of the
+// obstacle during arm execution is not currently fed back into planning.
 type scenarioObstacle struct {
 	Geom  spatialmath.Geometry
 	Color *Color
+	Anim  *obstacleAnimation
 }
 
 // label returns the geometry's label, falling back to a generic name if
@@ -99,6 +105,10 @@ func (s *service) runScenario(ctx context.Context, scn Scenario) (addedUUIDs [][
 			return nil, fmt.Errorf("emit obstacle %s: %w", ob.label(), err)
 		}
 		addedUUIDs = append(addedUUIDs, uuid)
+		if ob.Anim != nil {
+			s.registerAnimation(uuid, *ob.Anim)
+			log.Infow("scenario: animation registered", "uuid", string(uuid), "period_s", ob.Anim.PeriodS)
+		}
 	}
 
 	// Build the FrameSystem and plan.

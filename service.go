@@ -74,9 +74,16 @@ type service struct {
 	// Active subscribers. broadcastLocked walks this slice.
 	subscribers []chan worldstatestore.TransformChange
 
-	// Scenario loop control.
+	// Animated obstacles. The animation tick goroutine reads this list
+	// and re-emits UPDATED transforms each tick.
+	animations []animState
+
+	// Scenario loop + animation tick control. Reconfigure cancels both
+	// and starts fresh ones.
 	tickCancel context.CancelFunc
 	tickDone   chan struct{}
+	animCancel context.CancelFunc
+	animDone   chan struct{}
 	advanceSig chan struct{} // buffered cap-1; `next`/`run` poke this
 
 	// Resolved dependencies.
@@ -195,14 +202,29 @@ func (s *service) Reconfigure(
 		prevCancel()
 		<-prevDone
 	}
+	// Stop and clear any prior animations.
+	s.mu.Lock()
+	prevAnimCancel := s.animCancel
+	prevAnimDone := s.animDone
+	s.animations = nil
+	s.mu.Unlock()
+	if prevAnimCancel != nil {
+		prevAnimCancel()
+		<-prevAnimDone
+	}
 
 	tickCtx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
+	animCtx, animCancel := context.WithCancel(context.Background())
+	animDone := make(chan struct{})
 	s.mu.Lock()
 	s.tickCancel = cancel
 	s.tickDone = done
+	s.animCancel = animCancel
+	s.animDone = animDone
 	s.mu.Unlock()
 	go s.runLoop(tickCtx, done)
+	go s.animationLoop(animCtx, animDone)
 
 	s.logger.Infow("example-motion-constraints-go (re)configured",
 		"name", conf.ResourceName().Name,
@@ -222,15 +244,22 @@ func (s *service) Close(ctx context.Context) error {
 	s.mu.Lock()
 	cancel := s.tickCancel
 	done := s.tickDone
+	animCancel := s.animCancel
+	animDone := s.animDone
 	subs := s.subscribers
 	s.subscribers = nil
 	scene := s.scene
 	s.scene = map[string]*commonpb.Transform{}
+	s.animations = nil
 	s.mu.Unlock()
 
 	if cancel != nil {
 		cancel()
 		<-done
+	}
+	if animCancel != nil {
+		animCancel()
+		<-animDone
 	}
 	for _, t := range scene {
 		change := worldstatestore.TransformChange{
