@@ -75,23 +75,24 @@ func loadTextPLY(text string, heightMM int) ([]byte, error) {
 	return data, nil
 }
 
-// labelTextForArm returns the human-readable description of what an
-// arm is demonstrating, based on its scenario key and whether it has
-// an offset gripper attached. Used as the source string for the
-// pre-generated text PLY asset.
+// labelTextForArm returns the multi-line description of what an arm
+// is demonstrating, based on its scenario key and whether it has an
+// offset gripper attached. Used as the source string for the
+// pre-generated text PLY asset. Must match a LABELS entry in
+// scripts/generate_text_assets.py — re-run `make assets` after edits.
 func labelTextForArm(scenarioKey string, hasGripper bool) string {
 	switch scenarioKey {
 	case "random_translation":
 		if hasGripper {
-			return "translation + gripper"
+			return "Translation Only\nConstraint: None\nCollidables: Self + Tool"
 		}
-		return "translation"
+		return "Translation Only\nConstraint: None\nCollidables: Self Only"
 	case "random_rotation":
 		if hasGripper {
-			return "rotation + gripper"
+			return "Rotation Only\nConstraint: None\nCollidables: Self + Tool"
 		}
-		return "rotation"
+		return "Rotation Only\nConstraint: None\nCollidables: Self Only"
 	}
-	// Fallback: use the raw key. Caller can decide whether to skip.
+	// Fallback: use the raw key.
 	return strings.ReplaceAll(scenarioKey, "_", " ")
 }

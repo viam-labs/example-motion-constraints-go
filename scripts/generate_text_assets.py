@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
 """Generate extruded text PLY meshes for the motion-constraints demo's
-per-arm scenario labels and row-level descriptions.
+per-arm scenario labels.
 
-This is a minimal port of `text_to_ply` from
+Multi-line input: when a label contains '\\n', each line is rendered
+as a separate text mesh and the meshes are stacked vertically (later
+lines BELOW earlier lines) into a single PLY. Line spacing is 1.4x
+the per-line height for readability.
+
+This is a port of `text_to_ply` from
 viam-labs/example-visualizations-python's `scripts/generate_assets.py`.
 Output: `assets/text__<heightMM>mm__<safeText>.ply` for every label
-listed in LABELS / ROW_LABELS below.
+listed in LABELS below.
 
-Dependencies: matplotlib, shapely, trimesh, mapbox_earcut. The
-easiest way to run is via the sibling Python module's venv:
+Dependencies: matplotlib, shapely, trimesh, mapbox_earcut. Easiest to
+run via the sibling Python module's venv:
 
     ~/viam/example-visualizations-python/.venv/bin/python \\
         scripts/generate_text_assets.py
-
-Re-run after editing LABELS or ROW_LABELS. The PLY files are
-committed alongside the source so customers don't need this tooling
-to use the module.
 """
 
 import math
@@ -31,22 +32,15 @@ from shapely.geometry import Polygon
 
 MM_PER_M = 1000.0
 
-# Per-arm scenario labels (one per arm in the demo) plus row-level
-# headings. The Go loader looks up assets by the same safe-filename
-# rule used here: non-[A-Za-z0-9_-] characters become underscores.
-ITEM_LABEL_HEIGHT_MM = 25.0
-ROW_LABEL_HEIGHT_MM = 70.0
+ITEM_LABEL_HEIGHT_MM = 35.0
 LABEL_DEPTH_MM = 2.0
+LINE_SPACING = 1.4  # multiplier on per-line cap height for line gap
 
 LABELS = [
-    "translation",
-    "rotation",
-    "translation + gripper",
-    "rotation + gripper",
-]
-
-ROW_LABELS = [
-    "End-Effector Control Frame",
+    "Translation Only\nConstraint: None\nCollidables: Self Only",
+    "Rotation Only\nConstraint: None\nCollidables: Self Only",
+    "Translation Only\nConstraint: None\nCollidables: Self + Tool",
+    "Rotation Only\nConstraint: None\nCollidables: Self + Tool",
 ]
 
 
@@ -55,15 +49,15 @@ def label_asset_filename(text: str, height_mm: float) -> str:
     return f"text__{int(round(height_mm))}mm__{safe}.ply"
 
 
-def text_to_ply(text: str, height_mm: float, depth_mm: float = LABEL_DEPTH_MM) -> bytes:
-    """Convert ``text`` to an extruded PLY mesh.
+def _line_to_mesh(line: str, height_mm: float, depth_mm: float):
+    """Build a trimesh for a single line of text. Returns None for
+    blank lines (so they leave vertical space without crashing the
+    polygon assembly)."""
+    line = line.rstrip()
+    if not line:
+        return None
 
-    Returns ASCII-PLY bytes in METERS so the RDK reader scales by 1000
-    to mm correctly. Mesh is oriented with text upright (text-Y == world-Z)
-    and front face at +Y so the default Viam viewer camera reads it
-    straight on.
-    """
-    tp = TextPath((0, 0), text, size=100.0, prop=FontProperties(family="DejaVu Sans"))
+    tp = TextPath((0, 0), line, size=100.0, prop=FontProperties(family="DejaVu Sans"))
     polys = tp.to_polygons()
     outers, holes = [], []
     for p in polys:
@@ -74,7 +68,7 @@ def text_to_ply(text: str, height_mm: float, depth_mm: float = LABEL_DEPTH_MM) -
         (outers if sa < 0 else holes).append(arr)
 
     if not outers:
-        raise ValueError(f"text {text!r} produced no outer contours")
+        return None
 
     shapes = []
     outer_polys = [Polygon(o.tolist()) for o in outers]
@@ -91,11 +85,45 @@ def text_to_ply(text: str, height_mm: float, depth_mm: float = LABEL_DEPTH_MM) -
 
     y_span = mesh.bounds[1][1] - mesh.bounds[0][1]
     if y_span <= 0:
-        raise ValueError(f"text {text!r} has zero-height bounding box")
+        return None
     mesh.apply_scale((height_mm / y_span) / MM_PER_M)
 
-    # Stand the text up (Y-axis world-vertical) with the front face
-    # at +Y so the default camera reads it left-to-right.
+    return mesh
+
+
+def text_to_ply(text: str, height_mm: float, depth_mm: float = LABEL_DEPTH_MM) -> bytes:
+    """Convert ``text`` (possibly multi-line with '\\n') to a PLY mesh.
+
+    Vertices are in METERS so the RDK reader scales by 1000 to mm
+    correctly. After all lines are stacked, the whole mesh is rotated
+    "upright with front face at +Y" so the default Viam viewer camera
+    reads it left-to-right.
+    """
+    lines = text.split("\n")
+    line_meshes = []
+    line_height_m = height_mm / MM_PER_M
+    line_spacing_m = LINE_SPACING * line_height_m
+    for i, line in enumerate(lines):
+        m = _line_to_mesh(line, height_mm, depth_mm)
+        if m is None:
+            continue
+        # Stack vertically: line 0 at y=0, line 1 below at -line_spacing, etc.
+        m.apply_translation([0, -i * line_spacing_m, 0])
+        line_meshes.append(m)
+
+    if not line_meshes:
+        raise ValueError(f"text {text!r} produced no renderable lines")
+
+    mesh = trimesh.util.concatenate(line_meshes)
+
+    # Center on (X, Y); the rotation below moves Y -> Z so the text
+    # ends up standing upright. Re-center afterwards so the host
+    # transform's pose is the LABEL CENTER not a corner.
+    center = (mesh.bounds[0] + mesh.bounds[1]) / 2
+    mesh.apply_translation([-center[0], -center[1], 0])
+
+    # Stand the text up (text-Y -> world-Z) with front face at +Y so
+    # the default Viam viewer camera reads it.
     mesh.apply_transform(trimesh.transformations.rotation_matrix(math.pi / 2, [1, 0, 0]))
     mesh.apply_transform(trimesh.transformations.rotation_matrix(math.pi, [0, 0, 1]))
 
@@ -109,14 +137,11 @@ def main() -> int:
     out_dir = Path(__file__).resolve().parent.parent / "assets"
     out_dir.mkdir(exist_ok=True)
 
-    pairs = [(t, ITEM_LABEL_HEIGHT_MM) for t in LABELS] + [
-        (t, ROW_LABEL_HEIGHT_MM) for t in ROW_LABELS
-    ]
-    for text, height in pairs:
-        path = out_dir / label_asset_filename(text, height)
-        data = text_to_ply(text, height)
+    for text in LABELS:
+        path = out_dir / label_asset_filename(text, ITEM_LABEL_HEIGHT_MM)
+        data = text_to_ply(text, ITEM_LABEL_HEIGHT_MM)
         path.write_bytes(data)
-        print(f"wrote {path.name} ({len(data)} bytes)")
+        print(f"wrote {path.name} ({len(data)} bytes) for: {text!r}")
     return 0
 
 

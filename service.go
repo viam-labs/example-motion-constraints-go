@@ -712,7 +712,7 @@ func (s *service) emitLabelMesh(uuid []byte, pose spatialmath.Pose, label string
 		},
 		PhysicalObject: geom,
 		Metadata: buildMetadata(metadataOpts{
-			Color:   &Color{R: 220, G: 220, B: 220},
+			Color:   &Color{R: 25, G: 25, B: 25},
 			Opacity: opacityPtr(1.0),
 		}),
 	}
@@ -1086,9 +1086,9 @@ func (s *service) emitArmLabelMeshes() {
 		return
 	}
 	const (
-		labelHeightMM = 25
-		labelForwardY = -600.0 // distance in front of the arm (-Y from base)
-		labelZ        = 50.0   // floor-level height
+		labelHeightMM = 35    // matches scripts/generate_text_assets.py
+		labelForwardY = -800.0 // distance in front of the arm (-Y from base)
+		labelZ        = 200.0  // off the floor so the multi-line plaque is fully visible
 	)
 	for armName, scenarioKey := range scenarios {
 		base := deps.armBase(armName)
