@@ -363,11 +363,21 @@ func (s *service) emitADDED(
 		}),
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if _, exists := s.scene[string(uuid)]; exists {
-		s.logger.Debugw("emitADDED skipped (UUID already in scene)", "uuid", string(uuid))
+	_, exists := s.scene[string(uuid)]
+	s.mu.Unlock()
+	if exists {
+		// Refresh color/opacity in place instead of re-emitting ADDED.
+		// Keeps the cycle from re-broadcasting redundant ADDEDs and lets a
+		// scenario reset a previously-collided (red) obstacle back to its
+		// default tint at the start of the next iteration.
+		if color != nil {
+			return s.emitColorUpdate(uuid, *color, opacity)
+		}
+		s.logger.Debugw("emitADDED skipped (UUID already in scene, no recolor)", "uuid", string(uuid))
 		return nil
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.scene[string(uuid)] = tf
 	geomKind := "unknown"
 	if geom != nil {
@@ -395,6 +405,32 @@ func (s *service) emitADDED(
 	s.broadcastLocked(worldstatestore.TransformChange{
 		ChangeType: pb.TransformChangeType_TRANSFORM_CHANGE_TYPE_ADDED,
 		Transform:  tf,
+	})
+	return nil
+}
+
+// emitColorUpdate replaces an existing entity's color (and opacity) without
+// rotating the UUID. Emits an UPDATED change with a field-mask covering the
+// affected metadata keys so the renderer should pick up the recolor in
+// place. If the viewer turns out NOT to repaint on field-mask UPDATEs
+// (NOTES.md OQ3), we fall back to versioned-UUID re-add — see emitRecolorVia
+// ReAdd below for that path.
+func (s *service) emitColorUpdate(uuid []byte, newColor Color, opacity *float64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	tf, ok := s.scene[string(uuid)]
+	if !ok {
+		return nil
+	}
+	tf.Metadata = buildMetadata(metadataOpts{Color: &newColor, Opacity: opacity})
+	s.logger.Infow("emitColorUpdate",
+		"uuid", string(uuid),
+		"new_color", []int{newColor.R, newColor.G, newColor.B},
+	)
+	s.broadcastLocked(worldstatestore.TransformChange{
+		ChangeType:    pb.TransformChangeType_TRANSFORM_CHANGE_TYPE_UPDATED,
+		Transform:     tf,
+		UpdatedFields: []string{"metadata.colors", "metadata.opacities"},
 	})
 	return nil
 }

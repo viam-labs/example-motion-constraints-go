@@ -146,6 +146,27 @@ func (s *service) runScenario(ctx context.Context, scn Scenario) (addedUUIDs [][
 	log.Infow("scenario: ghost trail emitted", "count", len(previewUUIDs), "density", density)
 	_ = path // path is still useful for diagnostics; ghosts come from traj now
 
+	// Pre-flight collision check: walk the trajectory's arm link geometries
+	// against the world obstacles. Any hit recolors the offending obstacle
+	// red. See NOTES.md OQ5 — the planner doesn't always honor obstacles, so
+	// this independent check is the educational moment.
+	collidedLabels, firstHit, ccErr := checkTrajectoryCollisions(ctx, armRes, armName, traj, fs, obstacles)
+	if ccErr != nil {
+		log.Warnw("scenario: collision check failed", "err", ccErr)
+	}
+	if len(collidedLabels) > 0 {
+		log.Warnw("scenario: trajectory has collisions",
+			"obstacles", collidedLabels,
+			"first_hit_step", firstHit,
+		)
+		for _, label := range collidedLabels {
+			uuid := []byte("obstacle:" + label)
+			_ = s.emitColorUpdate(uuid, ColorCollision, opacityPtr(0.9))
+		}
+	} else {
+		log.Infow("scenario: trajectory is collision-free")
+	}
+
 	// Pause briefly so a human eye sees the ghost trail before motion.
 	if previewSec > 0 {
 		select {
