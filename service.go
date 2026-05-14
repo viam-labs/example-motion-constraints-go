@@ -13,6 +13,7 @@ package motionconstraints
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"sort"
 	"sync"
 	"time"
@@ -103,6 +104,13 @@ type service struct {
 	// armScenarios is the parallel-mode binding (arm name -> preset key).
 	// Empty in legacy sequential mode.
 	armScenarios map[string]string
+
+	// Diagnostic state. Updated under s.mu by runScenario; surfaced by
+	// the "stats" DoCommand verb.
+	cycleCount     map[string]int64
+	lastStageByArm map[string]string
+	lastStageAtByArm map[string]time.Time
+	lastErrorByArm map[string]string
 	// pinnedScenario, if non-empty, is run exactly once before the loop
 	// resumes — set by DoCommand `run`. Legacy mode only.
 	pinnedScenario string
@@ -115,14 +123,18 @@ func newService(
 	logger logging.Logger,
 ) (worldstatestore.Service, error) {
 	s := &service{
-		Named:      conf.ResourceName().AsNamed(),
-		logger:     logger,
-		scene:      map[string]*commonpb.Transform{},
-		tickHz:     DefaultTickHz,
-		intervalS:  DefaultIntervalS,
-		previewS:   DefaultPreviewS,
-		loop:       true,
-		advanceSig: make(chan struct{}, 1),
+		Named:            conf.ResourceName().AsNamed(),
+		logger:           logger,
+		scene:            map[string]*commonpb.Transform{},
+		tickHz:           DefaultTickHz,
+		intervalS:        DefaultIntervalS,
+		previewS:         DefaultPreviewS,
+		loop:             true,
+		advanceSig:       make(chan struct{}, 1),
+		cycleCount:       map[string]int64{},
+		lastStageByArm:   map[string]string{},
+		lastStageAtByArm: map[string]time.Time{},
+		lastErrorByArm:   map[string]string{},
 	}
 	if err := s.Reconfigure(ctx, deps, conf); err != nil {
 		return nil, err
@@ -781,6 +793,41 @@ func (s *service) DoCommand(
 		s.poke()
 		return map[string]any{"advanced": true}, nil
 
+	case "stats":
+		s.mu.Lock()
+		stages := map[string]any{}
+		stageAges := map[string]any{}
+		now := time.Now()
+		for k, v := range s.lastStageByArm {
+			stages[k] = v
+			if t, ok := s.lastStageAtByArm[k]; ok {
+				stageAges[k] = now.Sub(t).Seconds()
+			}
+		}
+		cycles := map[string]any{}
+		for k, v := range s.cycleCount {
+			cycles[k] = v
+		}
+		errs := map[string]any{}
+		for k, v := range s.lastErrorByArm {
+			errs[k] = v
+		}
+		sceneCount := len(s.scene)
+		subCount := len(s.subscribers)
+		animCount := len(s.animations)
+		s.mu.Unlock()
+		return map[string]any{
+			"phase":                 "10-parallel",
+			"goroutines":            runtime.NumGoroutine(),
+			"scene_count":           sceneCount,
+			"subscribers":           subCount,
+			"animations":            animCount,
+			"cycles":                cycles,
+			"current_stage":         stages,
+			"current_stage_age_sec": stageAges,
+			"last_error":            errs,
+		}, nil
+
 	default:
 		return nil, fmt.Errorf("unrecognized command %q; try one of: list, status, pause, resume, clear, run, next", verb)
 	}
@@ -792,4 +839,34 @@ func (s *service) poke() {
 	case s.advanceSig <- struct{}{}:
 	default:
 	}
+}
+
+// recordStage tracks which scenario stage each arm is currently in so the
+// "stats" DoCommand verb can identify stuck goroutines. Stages: "idle",
+// "setup", "build_fs", "planning", "preview_wait", "executing",
+// "interval_sleep", "errored".
+func (s *service) recordStage(armName, stage string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastStageByArm[armName] = stage
+	s.lastStageAtByArm[armName] = time.Now()
+}
+
+// recordCycle increments the per-arm completed-cycle counter and clears
+// any prior error for that arm.
+func (s *service) recordCycle(armName string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cycleCount[armName]++
+	delete(s.lastErrorByArm, armName)
+}
+
+// recordError stamps the most recent failure on an arm so callers of
+// "stats" can see what each stuck arm last tripped on.
+func (s *service) recordError(armName, errMsg string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastErrorByArm[armName] = errMsg
+	s.lastStageByArm[armName] = "errored"
+	s.lastStageAtByArm[armName] = time.Now()
 }

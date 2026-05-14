@@ -197,21 +197,27 @@ func presetDynamicObstacle() Scenario {
 
 // ---- multi_arm_choreography ------------------------------------------------
 
-// presetMultiArmChoreography drives the designated arm toward a shared
-// world point with all other configured arms treated as obstacles.
-// When multiple arms are assigned this preset in parallel mode, each
-// independently plans toward the center while seeing the others as
-// (currently posed) obstacles — collisions are expected and the
-// red-tint highlights which arm crashed into which.
+// presetMultiArmChoreography drives the designated arm to alternate
+// between two arm-relative anchors with all other configured arms
+// treated as obstacles. The "choreography" angle is that every arm
+// runs the same swing while sibling arms inject into the WorldState,
+// so the collision-highlight fires when two arms swing through each
+// other's volume.
+//
+// Earlier versions used an absolute world goal (0, 0, 700) to imply
+// "all converge to a center" — but with 1m+ arm spacing that goal is
+// physically out of reach. Arm-relative anchors keep each arm's plan
+// solvable.
 func presetMultiArmChoreography() Scenario {
-	// Shared world target: 0,0,700 (absolute, not relative to any arm).
-	goal := spatialmath.NewPoseFromPoint(r3.Vector{X: 0, Y: 0, Z: 700})
+	anchorA := r3.Vector{X: 400, Y: 250, Z: 500}
+	anchorB := r3.Vector{X: 400, Y: -250, Z: 500}
 
 	return Scenario{
 		Key:         "multi_arm_choreography",
-		Description: "Arms reach toward a shared world center; sibling arms become obstacles.",
+		Description: "Arms swing between anchors with siblings injected as world obstacles.",
 		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
-			// No declared obstacles — siblings are injected inside Plan.
+			// No static obstacles; siblings are injected inside Plan so
+			// they reflect every other arm's current joint configuration.
 			return nil, nil
 		},
 		Plan: func(
@@ -222,11 +228,8 @@ func presetMultiArmChoreography() Scenario {
 			obstacles []scenarioObstacle,
 		) (motionplan.Plan, error) {
 			siblingObstacles := injectSiblingArmObstacles(ctx, r, fs, armName)
-			plan, err := planSingleArmToPose(ctx, r, fs, armName, goal, siblingObstacles, nil)
-			if err != nil {
-				return nil, err
-			}
-			return plan, nil
+			swing := alternateBetweenAnchors("multi_arm_choreography", anchorA, anchorB, nil)
+			return swing(ctx, r, fs, armName, siblingObstacles)
 		},
 	}
 }

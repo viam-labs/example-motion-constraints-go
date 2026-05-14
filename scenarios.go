@@ -101,15 +101,23 @@ func (s *service) runScenario(ctx context.Context, scn Scenario, armName string)
 	}
 
 	log := s.logger
+	scenarioStart := time.Now()
+	s.recordStage(armName, "setup")
 	log.Infow("scenario: setup begin", "key", scn.Key, "arm", armName, "preview_s", previewSec)
 
 	// Setup: emit obstacles.
+	setupStart := time.Now()
 	obstacles, err := scn.Setup(ctx, r, armName)
 	if err != nil {
+		s.recordError(armName, "setup: "+err.Error())
 		log.Errorw("scenario: setup failed", "key", scn.Key, "arm", armName, "err", err)
 		return nil, fmt.Errorf("setup: %w", err)
 	}
-	log.Infow("scenario: setup produced obstacles", "key", scn.Key, "arm", armName, "count", len(obstacles))
+	log.Infow("scenario: setup produced obstacles",
+		"key", scn.Key, "arm", armName,
+		"count", len(obstacles),
+		"setup_ms", time.Since(setupStart).Milliseconds(),
+	)
 	for _, ob := range obstacles {
 		// Obstacle UUIDs are arm-scoped so two arms running the same
 		// preset don't fight over a single scene-map entry.
@@ -133,17 +141,29 @@ func (s *service) runScenario(ctx context.Context, scn Scenario, armName string)
 	}
 
 	// Build the FrameSystem and plan.
+	s.recordStage(armName, "build_fs")
+	fsStart := time.Now()
 	fs, err := buildFrameSystem(ctx, r)
 	if err != nil {
-		log.Errorw("scenario: build frame system failed", "err", err)
+		s.recordError(armName, "build_fs: "+err.Error())
+		log.Errorw("scenario: build frame system failed", "arm", armName, "err", err)
 		return addedUUIDs, fmt.Errorf("build frame system: %w", err)
 	}
-	log.Infow("scenario: frame system built", "frames", fs.FrameNames())
+	log.Infow("scenario: frame system built",
+		"arm", armName,
+		"fs_ms", time.Since(fsStart).Milliseconds(),
+		"frame_count", len(fs.FrameNames()),
+	)
+	s.recordStage(armName, "planning")
+	planStart := time.Now()
 	plan, err := scn.Plan(ctx, r, fs, armName, obstacles)
+	planMS := time.Since(planStart).Milliseconds()
 	if err != nil {
-		log.Errorw("scenario: plan failed", "arm", armName, "err", err)
+		s.recordError(armName, "plan: "+err.Error())
+		log.Errorw("scenario: plan failed", "arm", armName, "plan_ms", planMS, "err", err)
 		return addedUUIDs, fmt.Errorf("plan: %w", err)
 	}
+	log.Infow("scenario: plan ok", "arm", armName, "plan_ms", planMS)
 	armRes, ok := r.arms[armName]
 	if !ok {
 		log.Errorw("scenario: unknown arm", "arm", armName, "configured_arms", r.armOrder)
@@ -222,19 +242,33 @@ func (s *service) runScenario(ctx context.Context, scn Scenario, armName string)
 			"arm", armName,
 			"obstacles", collidedLabels,
 		)
+		s.recordStage(armName, "idle_after_collision")
+		s.recordCycle(armName)
 		return addedUUIDs, nil
 	}
+	s.recordStage(armName, "executing")
 	log.Infow("scenario: executing", "arm", armName, "waypoints", len(armInputs))
 	if len(armInputs) > 1 {
-		// Skip the seed configuration; pass only forward-going waypoints.
+		execStart := time.Now()
 		if err := armRes.MoveThroughJointPositions(ctx, armInputs[1:], nil, nil); err != nil {
-			log.Errorw("scenario: execute failed", "arm", armName, "err", err)
+			s.recordError(armName, "execute: "+err.Error())
+			log.Errorw("scenario: execute failed",
+				"arm", armName,
+				"exec_ms", time.Since(execStart).Milliseconds(),
+				"err", err,
+			)
 			return addedUUIDs, fmt.Errorf("execute on %q: %w", armName, err)
 		}
-		log.Infow("scenario: executed", "arm", armName)
+		log.Infow("scenario: executed",
+			"arm", armName,
+			"exec_ms", time.Since(execStart).Milliseconds(),
+			"total_ms", time.Since(scenarioStart).Milliseconds(),
+		)
 	} else {
 		log.Warnw("scenario: trajectory too short to execute", "arm", armName, "waypoints", len(armInputs))
 	}
+	s.recordStage(armName, "idle")
+	s.recordCycle(armName)
 
 	// Tear down the ghost trail. Obstacles remain on screen so the user
 	// can see the result of the move.
