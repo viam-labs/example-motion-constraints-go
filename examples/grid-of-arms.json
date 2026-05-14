@@ -7,84 +7,64 @@
     }
   ],
   "components": [
-    {
-      "name": "arm_a1", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
+    { "name": "arm_a1", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
       "attributes": { "arm-model": "ur5e", "simulate-time": true },
-      "frame": { "parent": "world", "translation": { "x": -3750, "y": 2400, "z": 0 } }
-    },
-    {
-      "name": "arm_a2", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
+      "frame": { "parent": "world", "translation": { "x": -3750, "y": 2400, "z": 0 } } },
+    { "name": "arm_a2", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
       "attributes": { "arm-model": "ur5e", "simulate-time": true },
-      "frame": { "parent": "world", "translation": { "x": -1250, "y": 2400, "z": 0 } }
-    },
-    {
-      "name": "arm_a3", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
+      "frame": { "parent": "world", "translation": { "x": -1250, "y": 2400, "z": 0 } } },
+    { "name": "arm_a3", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
       "attributes": { "arm-model": "ur5e", "simulate-time": true },
-      "frame": { "parent": "world", "translation": { "x": 1250, "y": 2400, "z": 0 } }
-    },
-    {
-      "name": "arm_a4", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
+      "frame": { "parent": "world", "translation": { "x": 1250, "y": 2400, "z": 0 } } },
+    { "name": "arm_a4", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
       "attributes": { "arm-model": "ur5e", "simulate-time": true },
-      "frame": { "parent": "world", "translation": { "x": 3750, "y": 2400, "z": 0 } }
-    },
-    {
-      "name": "gripper_a3",
-      "api": "rdk:component:gripper",
-      "model": "rdk:builtin:fake",
-      "frame": {
-        "parent": "arm_a3",
-        "translation": { "x": 0, "y": 0, "z": 150 }
-      }
-    },
-    {
-      "name": "gripper_a4",
-      "api": "rdk:component:gripper",
-      "model": "rdk:builtin:fake",
-      "frame": {
-        "parent": "arm_a4",
-        "translation": { "x": 80, "y": 0, "z": 200 }
-      }
-    },
-    {
-      "name": "arm_b1", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
+      "frame": { "parent": "world", "translation": { "x": 3750, "y": 2400, "z": 0 } } },
+    { "name": "gripper_a3", "api": "rdk:component:gripper", "model": "rdk:builtin:fake",
+      "frame": { "parent": "arm_a3", "translation": { "x": 0, "y": 0, "z": 150 } } },
+    { "name": "gripper_a4", "api": "rdk:component:gripper", "model": "rdk:builtin:fake",
+      "frame": { "parent": "arm_a4", "translation": { "x": 80, "y": 0, "z": 200 } } },
+
+    { "name": "arm_b1", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
       "attributes": { "arm-model": "ur7e", "simulate-time": true },
-      "frame": { "parent": "world", "translation": { "x": -3750, "y": 0, "z": 0 } }
-    },
-    {
-      "name": "arm_b2", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
+      "frame": { "parent": "world", "translation": { "x": -3750, "y": 0, "z": 0 } } },
+    { "name": "arm_b2", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
       "attributes": { "arm-model": "ur7e", "simulate-time": true },
-      "frame": { "parent": "world", "translation": { "x": -1250, "y": 0, "z": 0 } }
-    },
-    {
-      "name": "arm_b3", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
+      "frame": { "parent": "world", "translation": { "x": -1250, "y": 0, "z": 0 } } },
+    { "name": "arm_b3", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
       "attributes": { "arm-model": "xarm6", "simulate-time": true },
-      "frame": { "parent": "world", "translation": { "x": 1250, "y": 0, "z": 0 } }
-    },
-    {
-      "name": "arm_b4", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
+      "frame": { "parent": "world", "translation": { "x": 1250, "y": 0, "z": 0 } } },
+    { "name": "arm_b4", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
       "attributes": { "arm-model": "xarm7", "simulate-time": true },
-      "frame": { "parent": "world", "translation": { "x": 3750, "y": 0, "z": 0 } }
+      "frame": { "parent": "world", "translation": { "x": 3750, "y": 0, "z": 0 } } },
+
+    { "name": "gripper_b1", "api": "rdk:component:gripper", "model": "rdk:builtin:fake",
+      "frame": { "parent": "arm_b1", "translation": { "x": 0, "y": 0, "z": 100 } } },
+    { "name": "gripper_b2", "api": "rdk:component:gripper", "model": "rdk:builtin:fake",
+      "frame": { "parent": "arm_b2", "translation": { "x": 0, "y": 0, "z": 100 } } },
+    { "name": "gripper_b3", "api": "rdk:component:gripper", "model": "rdk:builtin:fake",
+      "frame": {
+        "parent": "arm_b3",
+        "translation": { "x": 0, "y": 0, "z": 100 },
+        "geometry": {
+          "type": "box",
+          "x": 50, "y": 50, "z": 250,
+          "translation": { "x": 0, "y": 0, "z": 125 }
+        }
+      }
     },
-    {
-      "name": "arm_c1", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
+
+    { "name": "arm_c1", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
       "attributes": { "arm-model": "ur5e", "simulate-time": true },
-      "frame": { "parent": "world", "translation": { "x": -3750, "y": -2400, "z": 0 } }
-    },
-    {
-      "name": "arm_c2", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
+      "frame": { "parent": "world", "translation": { "x": -3750, "y": -2400, "z": 0 } } },
+    { "name": "arm_c2", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
       "attributes": { "arm-model": "ur5e", "simulate-time": true },
-      "frame": { "parent": "world", "translation": { "x": -1250, "y": -2400, "z": 0 } }
-    },
-    {
-      "name": "arm_c3", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
+      "frame": { "parent": "world", "translation": { "x": -1250, "y": -2400, "z": 0 } } },
+    { "name": "arm_c3", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
       "attributes": { "arm-model": "ur7e", "simulate-time": true },
-      "frame": { "parent": "world", "translation": { "x": 1250, "y": -2400, "z": 0 } }
-    },
-    {
-      "name": "arm_c4", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
+      "frame": { "parent": "world", "translation": { "x": 1250, "y": -2400, "z": 0 } } },
+    { "name": "arm_c4", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
       "attributes": { "arm-model": "xarm6", "simulate-time": true },
-      "frame": { "parent": "world", "translation": { "x": 3750, "y": -2400, "z": 0 } }
-    }
+      "frame": { "parent": "world", "translation": { "x": 3750, "y": -2400, "z": 0 } } }
   ],
   "services": [
     {
@@ -95,7 +75,8 @@
         "arm_a1", "arm_a2", "arm_a3", "arm_a4",
         "arm_b1", "arm_b2", "arm_b3", "arm_b4",
         "arm_c1", "arm_c2", "arm_c3", "arm_c4",
-        "gripper_a3", "gripper_a4"
+        "gripper_a3", "gripper_a4",
+        "gripper_b1", "gripper_b2", "gripper_b3"
       ],
       "attributes": {
         "arms": [
@@ -108,10 +89,10 @@
           "arm_a2": "random_rotation",
           "arm_a3": "random_translation",
           "arm_a4": "random_rotation",
-          "arm_b1": "single_arm_obstacle",
-          "arm_b2": "linear_constraint",
-          "arm_b3": "orientation_constraint",
-          "arm_b4": "obstacle_progression",
+          "arm_b1": "arc_over_obstacle",
+          "arm_b2": "duck_under_obstacle",
+          "arm_b3": "gripper_with_box",
+          "arm_b4": "corridor_passthrough",
           "arm_c1": "linear_constraint",
           "arm_c2": "orientation_constraint",
           "arm_c3": "dynamic_obstacle",
@@ -119,7 +100,10 @@
         },
         "ee_frames": {
           "arm_a3": "gripper_a3",
-          "arm_a4": "gripper_a4"
+          "arm_a4": "gripper_a4",
+          "arm_b1": "gripper_b1",
+          "arm_b2": "gripper_b2",
+          "arm_b3": "gripper_b3"
         },
         "loop": true,
         "interval_s": 4,

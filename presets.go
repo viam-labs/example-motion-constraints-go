@@ -44,6 +44,18 @@ func presetByKey(key string) *Scenario {
 	case "random_rotation":
 		s := presetRandomRotation()
 		return &s
+	case "arc_over_obstacle":
+		s := presetArcOverObstacle()
+		return &s
+	case "duck_under_obstacle":
+		s := presetDuckUnderObstacle()
+		return &s
+	case "gripper_with_box":
+		s := presetGripperWithBox()
+		return &s
+	case "corridor_passthrough":
+		s := presetCorridorPassthrough()
+		return &s
 	default:
 		return nil
 	}
@@ -428,6 +440,141 @@ func presetRandomRotation() Scenario {
 			}
 			return planSingleArmToPose(ctx, r, fs, armName, goal, obstacles, nil)
 		},
+	}
+}
+
+// ---- arc_over_obstacle -----------------------------------------------------
+
+// presetArcOverObstacle places a wide, short obstacle slightly below the
+// straight-line path between two anchors so the planner naturally chooses
+// to arc OVER the box. The arm visibly lifts and dips back to the goal.
+func presetArcOverObstacle() Scenario {
+	const (
+		// Box centered between anchors. Wide in Y so going around
+		// laterally is geometrically much longer than going over.
+		boxOffsetX, boxOffsetY, boxOffsetZ = 500.0, 0.0, 300.0
+		boxDX, boxDY, boxDZ                = 200.0, 500.0, 100.0
+	)
+	anchorA := r3.Vector{X: 500, Y: 350, Z: 450}
+	anchorB := r3.Vector{X: 500, Y: -350, Z: 450}
+
+	return Scenario{
+		Key:         "arc_over_obstacle",
+		Description: "Wide low box between anchors — arm arcs over the top.",
+		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
+			base := r.armBase(armName).Point()
+			pos := r3.Vector{X: base.X + boxOffsetX, Y: base.Y + boxOffsetY, Z: base.Z + boxOffsetZ}
+			geom, err := armPrefixedBox(armName, "arc_over_obstacle", "box", pos, boxDX, boxDY, boxDZ)
+			if err != nil {
+				return nil, err
+			}
+			return []scenarioObstacle{{Geom: geom, Color: &ColorObstacle}}, nil
+		},
+		Plan: alternateBetweenAnchors("arc_over_obstacle", anchorA, anchorB, nil),
+	}
+}
+
+// ---- duck_under_obstacle ---------------------------------------------------
+
+// presetDuckUnderObstacle is the mirror image of arc_over_obstacle — box
+// is high, anchors are below, planner ducks under the obstacle. Same
+// total motion but the trajectory shape inverts.
+func presetDuckUnderObstacle() Scenario {
+	const (
+		boxOffsetX, boxOffsetY, boxOffsetZ = 500.0, 0.0, 500.0
+		boxDX, boxDY, boxDZ                = 200.0, 500.0, 100.0
+	)
+	anchorA := r3.Vector{X: 500, Y: 350, Z: 350}
+	anchorB := r3.Vector{X: 500, Y: -350, Z: 350}
+
+	return Scenario{
+		Key:         "duck_under_obstacle",
+		Description: "Wide high box between anchors — arm ducks underneath.",
+		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
+			base := r.armBase(armName).Point()
+			pos := r3.Vector{X: base.X + boxOffsetX, Y: base.Y + boxOffsetY, Z: base.Z + boxOffsetZ}
+			geom, err := armPrefixedBox(armName, "duck_under_obstacle", "box", pos, boxDX, boxDY, boxDZ)
+			if err != nil {
+				return nil, err
+			}
+			return []scenarioObstacle{{Geom: geom, Color: &ColorObstacle}}, nil
+		},
+		Plan: alternateBetweenAnchors("duck_under_obstacle", anchorA, anchorB, nil),
+	}
+}
+
+// ---- gripper_with_box ------------------------------------------------------
+
+// presetGripperWithBox is the same arc-over problem as arc_over_obstacle,
+// but the arm carries a tool that itself has a box-shaped collision
+// geometry attached (configured on the gripper component's frame in the
+// machine config). The framesystem includes the gripper geometry in the
+// arm's collision footprint, so the same anchor pair + obstacle can
+// produce a visibly different path because the gripper sticks out.
+func presetGripperWithBox() Scenario {
+	const (
+		boxOffsetX, boxOffsetY, boxOffsetZ = 500.0, 0.0, 300.0
+		boxDX, boxDY, boxDZ                = 200.0, 500.0, 100.0
+	)
+	anchorA := r3.Vector{X: 500, Y: 400, Z: 500}
+	anchorB := r3.Vector{X: 500, Y: -400, Z: 500}
+
+	return Scenario{
+		Key:         "gripper_with_box",
+		Description: "Arc-over scenario where the gripper itself carries a long collision geometry.",
+		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
+			base := r.armBase(armName).Point()
+			pos := r3.Vector{X: base.X + boxOffsetX, Y: base.Y + boxOffsetY, Z: base.Z + boxOffsetZ}
+			geom, err := armPrefixedBox(armName, "gripper_with_box", "box", pos, boxDX, boxDY, boxDZ)
+			if err != nil {
+				return nil, err
+			}
+			return []scenarioObstacle{{Geom: geom, Color: &ColorObstacle}}, nil
+		},
+		Plan: alternateBetweenAnchors("gripper_with_box", anchorA, anchorB, nil),
+	}
+}
+
+// ---- corridor_passthrough --------------------------------------------------
+
+// presetCorridorPassthrough sets up two large boxes such that the only
+// feasible trajectory between the anchors threads the gap between them.
+// Anchors are placed on opposite sides along X (in front of the corridor
+// and behind it) so the arm has to drive forward through the gap.
+func presetCorridorPassthrough() Scenario {
+	const (
+		boxOffsetX                 = 500.0
+		boxAY, boxAZ, boxBY, boxBZ = 250.0, 400.0, -250.0, 400.0
+		boxDX, boxDY, boxDZ        = 200.0, 200.0, 400.0
+	)
+	// Anchors in front of corridor and behind it. The arm must pass
+	// through the (y=-150..+150) gap at z≈400.
+	anchorA := r3.Vector{X: 350, Y: 0, Z: 400}
+	anchorB := r3.Vector{X: 650, Y: 0, Z: 400}
+
+	return Scenario{
+		Key:         "corridor_passthrough",
+		Description: "Two walls form a narrow corridor — the only feasible trajectory threads the gap.",
+		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
+			base := r.armBase(armName).Point()
+			boxA, err := armPrefixedBox(armName, "corridor_passthrough", "wall_plusY",
+				r3.Vector{X: base.X + boxOffsetX, Y: base.Y + boxAY, Z: base.Z + boxAZ},
+				boxDX, boxDY, boxDZ)
+			if err != nil {
+				return nil, err
+			}
+			boxB, err := armPrefixedBox(armName, "corridor_passthrough", "wall_minusY",
+				r3.Vector{X: base.X + boxOffsetX, Y: base.Y + boxBY, Z: base.Z + boxBZ},
+				boxDX, boxDY, boxDZ)
+			if err != nil {
+				return nil, err
+			}
+			return []scenarioObstacle{
+				{Geom: boxA, Color: &ColorObstacle},
+				{Geom: boxB, Color: &ColorObstacle},
+			}, nil
+		},
+		Plan: alternateBetweenAnchors("corridor_passthrough", anchorA, anchorB, nil),
 	}
 }
 

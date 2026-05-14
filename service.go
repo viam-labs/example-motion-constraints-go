@@ -47,6 +47,10 @@ var builtinPresets = []string{
 	"obstacle_progression",
 	"random_translation",
 	"random_rotation",
+	"arc_over_obstacle",
+	"duck_under_obstacle",
+	"gripper_with_box",
+	"corridor_passthrough",
 }
 
 func init() {
