@@ -7,7 +7,7 @@
   "models": [
     {
       "api": "rdk:service:world_state_store",
-      "model": "viam:example-motion-constraints-go:planner",
+      "model": "viam:example-motion-constraints-go:motion-playground",
       "short_description": "Plans + executes scripted motion scenarios on simulated arms with live trajectory previews.",
       "markdown_link": "README.md"
     }

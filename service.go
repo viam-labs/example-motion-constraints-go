@@ -29,7 +29,7 @@ import (
 )
 
 // Model is the resource model registered by this module.
-var Model = resource.NewModel("viam", "example-motion-constraints-go", "planner")
+var Model = resource.NewModel("viam", "example-motion-constraints-go", "motion-playground")
 
 const (
 	DefaultIntervalS       = 3.0

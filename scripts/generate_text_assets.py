@@ -41,6 +41,10 @@ LABELS = [
     "Arm Only\nRotation Only\nConstraint: None\nCollidables: Self Only",
     "Arm + Gripper\nTranslation Only\nConstraint: None\nCollidables: Self + Tool",
     "Arm + Gripper\nRotation Only\nConstraint: None\nCollidables: Self + Tool",
+    "Arm Only\nTranslation\nConstraint: Linear\nCollidables: Self Only",
+    "Arm Only\nRotation\nConstraint: Linear\nCollidables: Self Only",
+    "Arm + Gripper\nTranslation\nConstraint: Linear\nCollidables: Self + Tool",
+    "Arm + Gripper\nRotation\nConstraint: Linear\nCollidables: Self + Tool",
 ]
 
 
