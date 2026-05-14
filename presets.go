@@ -106,18 +106,16 @@ func presetSingleArmObstacle() Scenario {
 // ---- linear_constraint -----------------------------------------------------
 
 func presetLinearConstraint() Scenario {
-	const (
-		boxX, boxY, boxZ    = 400.0, 0.0, 250.0
-		boxDX, boxDY, boxDZ = 80.0, 80.0, 80.0
-	)
-	anchorA := r3.Vector{X: 500, Y: 350, Z: 400}
-	anchorB := r3.Vector{X: 500, Y: -350, Z: 400}
+	// No obstacle in this scenario. The educational story is the shape
+	// of the EE trajectory under a line constraint vs an unconstrained
+	// plan — adding a box made the cbirrt planner consistently time out
+	// at 15s+ under concurrent load with no extra pedagogical value.
+	anchorA := r3.Vector{X: 500, Y: 400, Z: 400}
+	anchorB := r3.Vector{X: 500, Y: -400, Z: 400}
 
-	// Tolerances picked loose enough for the default cbirrt planner to
-	// solve within the 8s plan budget on a clean ur5e workspace. Tighten
-	// these in a per-machine override (e.g. LineToleranceMm: 5,
-	// OrientationToleranceDegs: 5) to deliberately see the planner give
-	// up and trigger the timeout/red-tint pedagogy.
+	// Tolerances loose enough for cbirrt to solve quickly. Tighten in a
+	// per-machine override (e.g. LineToleranceMm: 5) to see the planner
+	// give up and trigger the timeout pedagogy.
 	constraints := &motionplan.Constraints{
 		LinearConstraint: []motionplan.LinearConstraint{
 			{LineToleranceMm: 50, OrientationToleranceDegs: 45},
@@ -125,15 +123,9 @@ func presetLinearConstraint() Scenario {
 	}
 	return Scenario{
 		Key:         "linear_constraint",
-		Description: "Hold the EE on a straight line between anchors with a centered box obstacle (50mm tolerance).",
+		Description: "Hold the EE on a straight line between anchors (50mm tolerance).",
 		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
-			base := r.armBase(armName).Point()
-			pos := r3.Vector{X: base.X + boxX, Y: base.Y + boxY, Z: base.Z + boxZ}
-			geom, err := armPrefixedBox(armName, "linear_constraint", "box", pos, boxDX, boxDY, boxDZ)
-			if err != nil {
-				return nil, err
-			}
-			return []scenarioObstacle{{Geom: geom, Color: &ColorObstacle}}, nil
+			return nil, nil
 		},
 		Plan: alternateBetweenAnchors("linear_constraint", anchorA, anchorB, constraints),
 	}
@@ -142,16 +134,11 @@ func presetLinearConstraint() Scenario {
 // ---- orientation_constraint ------------------------------------------------
 
 func presetOrientationConstraint() Scenario {
-	const (
-		boxX, boxY, boxZ    = 400.0, 0.0, 350.0
-		boxDX, boxDY, boxDZ = 100.0, 100.0, 100.0
-	)
+	// No obstacle — same rationale as linear_constraint. The constraint
+	// itself is the demo.
 	anchorA := r3.Vector{X: 500, Y: 400, Z: 400}
 	anchorB := r3.Vector{X: 500, Y: -400, Z: 400}
 
-	// 45deg is loose enough for the default planner to find solutions
-	// within budget while still meaningfully constraining the path. Drop
-	// to 5-10deg in a per-machine override to see the planner struggle.
 	constraints := &motionplan.Constraints{
 		OrientationConstraint: []motionplan.OrientationConstraint{
 			{OrientationToleranceDegs: 45},
@@ -161,13 +148,7 @@ func presetOrientationConstraint() Scenario {
 		Key:         "orientation_constraint",
 		Description: "Keep the EE orientation within 45 deg while moving between anchors.",
 		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
-			base := r.armBase(armName).Point()
-			pos := r3.Vector{X: base.X + boxX, Y: base.Y + boxY, Z: base.Z + boxZ}
-			geom, err := armPrefixedBox(armName, "orientation_constraint", "box", pos, boxDX, boxDY, boxDZ)
-			if err != nil {
-				return nil, err
-			}
-			return []scenarioObstacle{{Geom: geom, Color: &ColorObstacle}}, nil
+			return nil, nil
 		},
 		Plan: alternateBetweenAnchors("orientation_constraint", anchorA, anchorB, constraints),
 	}
@@ -308,17 +289,15 @@ func presetObstacleProgression() Scenario {
 		Key:         "obstacle_progression",
 		Description: "Same anchors; obstacles accumulate each cycle (box, +floor, +ceiling, +walls).",
 		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
-			// 3 stages by default (box / +floor / +ceiling). The original
-			// stage-3 "walls closing in" demonstration reliably timed the
-			// planner out at the 8s budget; we keep that case in code as
-			// stage 3 (commented out) for users who want to opt into the
-			// failure-mode pedagogy.
-			stage := int(atomic.AddInt64(&counter, 1)-1) % 3
+			// Two stages: just the box, then box+floor. Anything heavier
+			// (ceiling, walls) reliably timed the cbirrt planner out
+			// under concurrent load.
+			stage := int(atomic.AddInt64(&counter, 1)-1) % 2
 			base := r.armBase(armName).Point()
 
 			obstacles := []scenarioObstacle{}
 			boxPos := r3.Vector{X: base.X + 400, Y: base.Y + 0, Z: base.Z + 350}
-			boxGeom, err := armPrefixedBox(armName, "obstacle_progression", "box", boxPos, 150, 300, 200)
+			boxGeom, err := armPrefixedBox(armName, "obstacle_progression", "box", boxPos, 100, 150, 200)
 			if err != nil {
 				return nil, err
 			}
@@ -331,14 +310,6 @@ func presetObstacleProgression() Scenario {
 					return nil, err
 				}
 				obstacles = append(obstacles, scenarioObstacle{Geom: floor, Color: &ColorObstacle})
-			}
-			if stage >= 2 {
-				ceiling, err := armPrefixedBox(armName, "obstacle_progression", "ceiling",
-					r3.Vector{X: base.X, Y: base.Y, Z: base.Z + 900}, 2500, 2500, 10)
-				if err != nil {
-					return nil, err
-				}
-				obstacles = append(obstacles, scenarioObstacle{Geom: ceiling, Color: &ColorObstacle})
 			}
 			return obstacles, nil
 		},

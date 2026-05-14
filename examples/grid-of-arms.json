@@ -10,62 +10,62 @@
     {
       "name": "arm_a1", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
       "attributes": { "arm-model": "ur5e", "simulate-time": true },
-      "frame": { "parent": "world", "translation": { "x": -1500, "y": 1200, "z": 0 } }
+      "frame": { "parent": "world", "translation": { "x": -3750, "y": 2400, "z": 0 } }
     },
     {
       "name": "arm_a2", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
       "attributes": { "arm-model": "ur5e", "simulate-time": true },
-      "frame": { "parent": "world", "translation": { "x": -500, "y": 1200, "z": 0 } }
+      "frame": { "parent": "world", "translation": { "x": -1250, "y": 2400, "z": 0 } }
     },
     {
       "name": "arm_a3", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
       "attributes": { "arm-model": "ur5e", "simulate-time": true },
-      "frame": { "parent": "world", "translation": { "x": 500, "y": 1200, "z": 0 } }
+      "frame": { "parent": "world", "translation": { "x": 1250, "y": 2400, "z": 0 } }
     },
     {
       "name": "arm_a4", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
       "attributes": { "arm-model": "ur5e", "simulate-time": true },
-      "frame": { "parent": "world", "translation": { "x": 1500, "y": 1200, "z": 0 } }
+      "frame": { "parent": "world", "translation": { "x": 3750, "y": 2400, "z": 0 } }
     },
     {
       "name": "arm_b1", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
       "attributes": { "arm-model": "ur7e", "simulate-time": true },
-      "frame": { "parent": "world", "translation": { "x": -1500, "y": 0, "z": 0 } }
+      "frame": { "parent": "world", "translation": { "x": -3750, "y": 0, "z": 0 } }
     },
     {
       "name": "arm_b2", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
       "attributes": { "arm-model": "ur7e", "simulate-time": true },
-      "frame": { "parent": "world", "translation": { "x": -500, "y": 0, "z": 0 } }
+      "frame": { "parent": "world", "translation": { "x": -1250, "y": 0, "z": 0 } }
     },
     {
       "name": "arm_b3", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
       "attributes": { "arm-model": "xarm6", "simulate-time": true },
-      "frame": { "parent": "world", "translation": { "x": 500, "y": 0, "z": 0 } }
+      "frame": { "parent": "world", "translation": { "x": 1250, "y": 0, "z": 0 } }
     },
     {
       "name": "arm_b4", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
       "attributes": { "arm-model": "xarm7", "simulate-time": true },
-      "frame": { "parent": "world", "translation": { "x": 1500, "y": 0, "z": 0 } }
+      "frame": { "parent": "world", "translation": { "x": 3750, "y": 0, "z": 0 } }
     },
     {
       "name": "arm_c1", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
       "attributes": { "arm-model": "ur5e", "simulate-time": true },
-      "frame": { "parent": "world", "translation": { "x": -1500, "y": -1200, "z": 0 } }
+      "frame": { "parent": "world", "translation": { "x": -3750, "y": -2400, "z": 0 } }
     },
     {
       "name": "arm_c2", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
       "attributes": { "arm-model": "ur5e", "simulate-time": true },
-      "frame": { "parent": "world", "translation": { "x": -500, "y": -1200, "z": 0 } }
+      "frame": { "parent": "world", "translation": { "x": -1250, "y": -2400, "z": 0 } }
     },
     {
       "name": "arm_c3", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
       "attributes": { "arm-model": "ur7e", "simulate-time": true },
-      "frame": { "parent": "world", "translation": { "x": 500, "y": -1200, "z": 0 } }
+      "frame": { "parent": "world", "translation": { "x": 1250, "y": -2400, "z": 0 } }
     },
     {
       "name": "arm_c4", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
       "attributes": { "arm-model": "xarm6", "simulate-time": true },
-      "frame": { "parent": "world", "translation": { "x": 1500, "y": -1200, "z": 0 } }
+      "frame": { "parent": "world", "translation": { "x": 3750, "y": -2400, "z": 0 } }
     }
   ],
   "services": [
