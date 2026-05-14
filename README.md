@@ -20,7 +20,7 @@ The service is registered as a `world_state_store` because it both **publishes s
 
 1. Add the module via the Viam registry: `viam:example-motion-constraints-go`.
 2. Use the [`examples/single-arm-demo.json`](examples/single-arm-demo.json) config to get started with one arm and one obstacle.
-3. For the full demo grid, use [`examples/grid-of-arms.json`](examples/grid-of-arms.json) (2×2 mixed-model grid: ur5e, ur7e, xarm6, xarm7).
+3. For the full demo grid, use [`examples/grid-of-arms.json`](examples/grid-of-arms.json) (4×3 mixed-model grid: 12 arms running every preset in parallel; the top row cooperates on `multi_arm_choreography` and the rest show variations of the single-arm presets).
 4. Open the 3D scene viewer in the Viam app to watch scenarios execute.
 
 ## Configuration
@@ -33,7 +33,8 @@ The service config lives under the service's `attributes` block:
 | `motion_service` | string | _optional_ | Name of a motion service (`rdk:builtin:builtin`). Currently unused — planning goes through `motionplan/armplanning.PlanMotion` directly. Kept for future scenarios that drive arms via `motion.Move`. |
 | `loop` | bool | `true` | If true, scenarios cycle indefinitely; if false, the module idles until DoCommand. |
 | `interval_s` | float | `3.0` | Pause between scenarios in loop mode. |
-| `presets` | `[]string` | `["single_arm_obstacle"]` | Built-in scenario keys to run in order. |
+| `presets` | `[]string` | `["single_arm_obstacle"]` | (Legacy sequential mode) Built-in scenario keys to run in order on the first configured arm. Ignored when `arm_scenarios` is set. |
+| `arm_scenarios` | `{arm: preset}` | unset | Parallel-mode binding: each listed arm runs its assigned preset on its own goroutine + cadence. Mutually exclusive with `presets`. See `examples/grid-of-arms.json` for a 12-arm demo. |
 | `preview_density` | int | `15` | Interpolated joint samples per planner waypoint pair when rendering the ghost trajectory. Higher = smoother trail. Set to 1 for keyframes-only. |
 | `abort_on_collision` | bool | `true` | If the trajectory's pre-flight collision check finds a hit, skip the execute step and just leave the trajectory + red-tinted obstacle on screen. |
 | `tick_hz` | float | `30` | Visualization tick rate (capped at 30). |

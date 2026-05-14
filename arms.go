@@ -10,6 +10,7 @@ import (
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/robot/framesystem"
 	"go.viam.com/rdk/services/motion"
+	"go.viam.com/rdk/spatialmath"
 )
 
 // resolved is the runtime view of the dependencies the planner service needs:
@@ -18,9 +19,14 @@ import (
 // armplanning.PlanMotion needs a *referenceframe.FrameSystem), and the
 // service's logger so plan helpers can emit diagnostics under the same
 // resource name as the service itself.
+//
+// armBases caches each arm's base pose in world coordinates so per-arm
+// scenarios can place obstacles relative to their own arm rather than in
+// absolute world coords. Populated in resolveDeps via framesystem.GetPose.
 type resolved struct {
 	arms        map[string]arm.Arm
 	armOrder    []string // preserve config order for grid scenarios
+	armBases    map[string]spatialmath.Pose
 	motion      motion.Service
 	frameSystem framesystem.Service
 	logger      logging.Logger
@@ -32,8 +38,9 @@ type resolved struct {
 // the user wants to see at startup rather than during the first scenario.
 func resolveDeps(deps resource.Dependencies, cfg *Config, logger logging.Logger) (*resolved, error) {
 	out := &resolved{
-		arms:   map[string]arm.Arm{},
-		logger: logger,
+		arms:     map[string]arm.Arm{},
+		armBases: map[string]spatialmath.Pose{},
+		logger:   logger,
 	}
 	for _, name := range cfg.Arms {
 		dep, err := findDepByShortName(deps, name)
@@ -77,6 +84,50 @@ func resolveDeps(deps resource.Dependencies, cfg *Config, logger logging.Logger)
 	out.frameSystem = fsSvc
 
 	return out, nil
+}
+
+// populateArmBases queries the framesystem for each configured arm's pose
+// in world coordinates and caches it on the resolved struct. Per-arm
+// scenarios use these offsets to place obstacles relative to the arm's
+// base rather than at absolute world coords.
+//
+// Best-effort: arms whose pose can't be resolved (e.g. transient framesystem
+// errors) silently fall back to a zero pose, which keeps single-arm-at-
+// origin configurations behaving exactly as before.
+func (r *resolved) populateArmBases(ctx context.Context) {
+	if r == nil || r.frameSystem == nil {
+		return
+	}
+	for _, name := range r.armOrder {
+		pif, err := r.frameSystem.GetPose(ctx, name, referenceframe.World, nil, nil)
+		if err != nil || pif == nil {
+			r.armBases[name] = spatialmath.NewZeroPose()
+			if r.logger != nil {
+				r.logger.Warnw("populateArmBases: GetPose failed, using zero", "arm", name, "err", err)
+			}
+			continue
+		}
+		r.armBases[name] = pif.Pose()
+		if r.logger != nil {
+			pt := pif.Pose().Point()
+			r.logger.Infow("populateArmBases: arm base in world",
+				"arm", name,
+				"xyz", []float64{pt.X, pt.Y, pt.Z},
+			)
+		}
+	}
+}
+
+// armBase returns the cached world-frame pose of an arm, or a zero pose if
+// the arm isn't in the cache.
+func (r *resolved) armBase(armName string) spatialmath.Pose {
+	if r == nil || r.armBases == nil {
+		return spatialmath.NewZeroPose()
+	}
+	if p, ok := r.armBases[armName]; ok && p != nil {
+		return p
+	}
+	return spatialmath.NewZeroPose()
 }
 
 // findDepByShortName tolerates configs that list arms by short name (e.g.

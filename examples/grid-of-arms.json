@@ -8,44 +8,64 @@
   ],
   "components": [
     {
-      "name": "arm_nw",
-      "api": "rdk:component:arm",
-      "model": "rdk:builtin:simulated",
+      "name": "arm_a1", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
       "attributes": { "arm-model": "ur5e", "simulate-time": true },
-      "frame": {
-        "parent": "world",
-        "translation": { "x": -400, "y": 400, "z": 0 }
-      }
+      "frame": { "parent": "world", "translation": { "x": -1500, "y": 1200, "z": 0 } }
     },
     {
-      "name": "arm_ne",
-      "api": "rdk:component:arm",
-      "model": "rdk:builtin:simulated",
+      "name": "arm_a2", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
+      "attributes": { "arm-model": "ur5e", "simulate-time": true },
+      "frame": { "parent": "world", "translation": { "x": -500, "y": 1200, "z": 0 } }
+    },
+    {
+      "name": "arm_a3", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
+      "attributes": { "arm-model": "ur5e", "simulate-time": true },
+      "frame": { "parent": "world", "translation": { "x": 500, "y": 1200, "z": 0 } }
+    },
+    {
+      "name": "arm_a4", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
+      "attributes": { "arm-model": "ur5e", "simulate-time": true },
+      "frame": { "parent": "world", "translation": { "x": 1500, "y": 1200, "z": 0 } }
+    },
+    {
+      "name": "arm_b1", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
       "attributes": { "arm-model": "ur7e", "simulate-time": true },
-      "frame": {
-        "parent": "world",
-        "translation": { "x": 400, "y": 400, "z": 0 }
-      }
+      "frame": { "parent": "world", "translation": { "x": -1500, "y": 0, "z": 0 } }
     },
     {
-      "name": "arm_sw",
-      "api": "rdk:component:arm",
-      "model": "rdk:builtin:simulated",
+      "name": "arm_b2", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
+      "attributes": { "arm-model": "ur7e", "simulate-time": true },
+      "frame": { "parent": "world", "translation": { "x": -500, "y": 0, "z": 0 } }
+    },
+    {
+      "name": "arm_b3", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
       "attributes": { "arm-model": "xarm6", "simulate-time": true },
-      "frame": {
-        "parent": "world",
-        "translation": { "x": -400, "y": -400, "z": 0 }
-      }
+      "frame": { "parent": "world", "translation": { "x": 500, "y": 0, "z": 0 } }
     },
     {
-      "name": "arm_se",
-      "api": "rdk:component:arm",
-      "model": "rdk:builtin:simulated",
+      "name": "arm_b4", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
       "attributes": { "arm-model": "xarm7", "simulate-time": true },
-      "frame": {
-        "parent": "world",
-        "translation": { "x": 400, "y": -400, "z": 0 }
-      }
+      "frame": { "parent": "world", "translation": { "x": 1500, "y": 0, "z": 0 } }
+    },
+    {
+      "name": "arm_c1", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
+      "attributes": { "arm-model": "ur5e", "simulate-time": true },
+      "frame": { "parent": "world", "translation": { "x": -1500, "y": -1200, "z": 0 } }
+    },
+    {
+      "name": "arm_c2", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
+      "attributes": { "arm-model": "ur5e", "simulate-time": true },
+      "frame": { "parent": "world", "translation": { "x": -500, "y": -1200, "z": 0 } }
+    },
+    {
+      "name": "arm_c3", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
+      "attributes": { "arm-model": "ur7e", "simulate-time": true },
+      "frame": { "parent": "world", "translation": { "x": 500, "y": -1200, "z": 0 } }
+    },
+    {
+      "name": "arm_c4", "api": "rdk:component:arm", "model": "rdk:builtin:simulated",
+      "attributes": { "arm-model": "xarm6", "simulate-time": true },
+      "frame": { "parent": "world", "translation": { "x": 1500, "y": -1200, "z": 0 } }
     }
   ],
   "services": [
@@ -53,18 +73,34 @@
       "name": "demo",
       "type": "world_state_store",
       "model": "viam:example-motion-constraints-go:planner",
-      "depends_on": ["arm_nw", "arm_ne", "arm_sw", "arm_se"],
+      "depends_on": [
+        "arm_a1", "arm_a2", "arm_a3", "arm_a4",
+        "arm_b1", "arm_b2", "arm_b3", "arm_b4",
+        "arm_c1", "arm_c2", "arm_c3", "arm_c4"
+      ],
       "attributes": {
-        "arms": ["arm_nw", "arm_ne", "arm_sw", "arm_se"],
+        "arms": [
+          "arm_a1", "arm_a2", "arm_a3", "arm_a4",
+          "arm_b1", "arm_b2", "arm_b3", "arm_b4",
+          "arm_c1", "arm_c2", "arm_c3", "arm_c4"
+        ],
+        "arm_scenarios": {
+          "arm_a1": "multi_arm_choreography",
+          "arm_a2": "multi_arm_choreography",
+          "arm_a3": "multi_arm_choreography",
+          "arm_a4": "multi_arm_choreography",
+          "arm_b1": "single_arm_obstacle",
+          "arm_b2": "linear_constraint",
+          "arm_b3": "orientation_constraint",
+          "arm_b4": "obstacle_progression",
+          "arm_c1": "linear_constraint",
+          "arm_c2": "orientation_constraint",
+          "arm_c3": "dynamic_obstacle",
+          "arm_c4": "dynamic_obstacle"
+        },
         "loop": true,
-        "interval_s": 3,
-        "presets": [
-          "single_arm_obstacle",
-          "linear_constraint",
-          "orientation_constraint",
-          "dynamic_obstacle",
-          "multi_arm_choreography"
-        ]
+        "interval_s": 4,
+        "preview_density": 15
       }
     }
   ]

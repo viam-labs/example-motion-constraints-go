@@ -19,23 +19,30 @@ import (
 // publish before planning, plan returns the trajectory to execute, and
 // execute commands the arm. The service orchestrates lifecycle, viz, and
 // timing around these hooks so individual presets stay readable.
+//
+// armName is the per-arm binding established by the parallel scenario
+// runner. Setup and Plan use it to place obstacles relative to the arm's
+// world base (via r.armBase(armName)) so multiple arms can run the same
+// preset in parallel without their scenes overlapping.
 type Scenario struct {
 	Key         string
 	Description string
 
-	// Setup returns the obstacles to publish before planning runs. The
-	// pose embedded in each geometry is in world coordinates.
-	Setup func(ctx context.Context, r *resolved) ([]scenarioObstacle, error)
+	// Setup returns the obstacles to publish before planning runs. Pose
+	// embedded in each geometry is already in world coordinates (Setup is
+	// responsible for adding the arm's world offset).
+	Setup func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error)
 
-	// Plan returns the arm being moved and the resulting motion plan.
-	// The obstacles list mirrors what Setup returned; the planner sees
-	// them as world-frame collision geometries.
+	// Plan returns the motion plan for the given arm. The obstacles list
+	// mirrors what Setup returned; the planner sees them as world-frame
+	// collision geometries.
 	Plan func(
 		ctx context.Context,
 		r *resolved,
 		fs *referenceframe.FrameSystem,
+		armName string,
 		obstacles []scenarioObstacle,
-	) (armName string, plan motionplan.Plan, err error)
+	) (motionplan.Plan, error)
 }
 
 // scenarioObstacle is a single world-frame collision geometry plus its
@@ -60,14 +67,19 @@ func (o *scenarioObstacle) label() string {
 	return "obstacle"
 }
 
-// runScenario executes a single scenario end-to-end: emit obstacles, plan,
-// emit ghost trajectory, drive the arm, then tear down the ghost trajectory.
-// Obstacles persist after return — the caller is responsible for clearing
-// them between scenarios.
+// runScenario executes a single scenario end-to-end on the named arm: emit
+// obstacles, plan, emit ghost trajectory, drive the arm, then tear down
+// the ghost trajectory. Obstacles persist after return — the caller is
+// responsible for clearing them between scenarios.
+//
+// armName binds the scenario to a specific arm in the resolved deps. In
+// parallel mode (Phase 10) the runner picks armName from the
+// arm_scenarios config map; in legacy sequential mode it falls back to
+// r.armOrder[0].
 //
 // returns the list of UUIDs added to the scene during this scenario so the
 // caller can remove them later.
-func (s *service) runScenario(ctx context.Context, scn Scenario) (addedUUIDs [][]byte, runErr error) {
+func (s *service) runScenario(ctx context.Context, scn Scenario, armName string) (addedUUIDs [][]byte, runErr error) {
 	if scn.Setup == nil || scn.Plan == nil {
 		return nil, fmt.Errorf("scenario %q is not fully implemented yet", scn.Key)
 	}
@@ -81,19 +93,27 @@ func (s *service) runScenario(ctx context.Context, scn Scenario) (addedUUIDs [][
 	if r == nil {
 		return nil, fmt.Errorf("dependencies not yet resolved")
 	}
+	if armName == "" {
+		if len(r.armOrder) == 0 {
+			return nil, fmt.Errorf("no arms configured")
+		}
+		armName = r.armOrder[0]
+	}
 
 	log := s.logger
-	log.Infow("scenario: setup begin", "key", scn.Key, "preview_s", previewSec)
+	log.Infow("scenario: setup begin", "key", scn.Key, "arm", armName, "preview_s", previewSec)
 
 	// Setup: emit obstacles.
-	obstacles, err := scn.Setup(ctx, r)
+	obstacles, err := scn.Setup(ctx, r, armName)
 	if err != nil {
-		log.Errorw("scenario: setup failed", "key", scn.Key, "err", err)
+		log.Errorw("scenario: setup failed", "key", scn.Key, "arm", armName, "err", err)
 		return nil, fmt.Errorf("setup: %w", err)
 	}
-	log.Infow("scenario: setup produced obstacles", "key", scn.Key, "count", len(obstacles))
+	log.Infow("scenario: setup produced obstacles", "key", scn.Key, "arm", armName, "count", len(obstacles))
 	for _, ob := range obstacles {
-		uuid := []byte("obstacle:" + ob.label())
+		// Obstacle UUIDs are arm-scoped so two arms running the same
+		// preset don't fight over a single scene-map entry.
+		uuid := []byte("obstacle:" + armName + ":" + ob.label())
 		obPose := ob.Geom.Pose()
 		obPoint := obPose.Point()
 		log.Infow("scenario: emit obstacle",
@@ -119,15 +139,15 @@ func (s *service) runScenario(ctx context.Context, scn Scenario) (addedUUIDs [][
 		return addedUUIDs, fmt.Errorf("build frame system: %w", err)
 	}
 	log.Infow("scenario: frame system built", "frames", fs.FrameNames())
-	armName, plan, err := scn.Plan(ctx, r, fs, obstacles)
+	plan, err := scn.Plan(ctx, r, fs, armName, obstacles)
 	if err != nil {
-		log.Errorw("scenario: plan failed", "err", err)
+		log.Errorw("scenario: plan failed", "arm", armName, "err", err)
 		return addedUUIDs, fmt.Errorf("plan: %w", err)
 	}
 	armRes, ok := r.arms[armName]
 	if !ok {
-		log.Errorw("scenario: unknown arm returned by Plan", "arm", armName, "configured_arms", r.armOrder)
-		return addedUUIDs, fmt.Errorf("plan returned unknown arm %q", armName)
+		log.Errorw("scenario: unknown arm", "arm", armName, "configured_arms", r.armOrder)
+		return addedUUIDs, fmt.Errorf("arm %q not configured", armName)
 	}
 
 	// Preview: emit one small ghost sphere per cartesian waypoint of the
@@ -173,7 +193,7 @@ func (s *service) runScenario(ctx context.Context, scn Scenario) (addedUUIDs [][
 			"abort_on_collision", abortOnCollision,
 		)
 		for _, label := range collidedLabels {
-			uuid := []byte("obstacle:" + label)
+			uuid := []byte("obstacle:" + armName + ":" + label)
 			_ = s.emitColorUpdate(uuid, ColorCollision, opacityPtr(0.9))
 		}
 	} else {

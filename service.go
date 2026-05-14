@@ -100,8 +100,11 @@ type service struct {
 	loop          bool
 	paused        bool
 	presets       []string
+	// armScenarios is the parallel-mode binding (arm name -> preset key).
+	// Empty in legacy sequential mode.
+	armScenarios map[string]string
 	// pinnedScenario, if non-empty, is run exactly once before the loop
-	// resumes — set by DoCommand `run`.
+	// resumes — set by DoCommand `run`. Legacy mode only.
 	pinnedScenario string
 }
 
@@ -144,6 +147,9 @@ func (s *service) Reconfigure(
 	if err != nil {
 		return err
 	}
+	// Cache each arm's world-frame base pose for relative-to-arm scenario
+	// coordinates. Best-effort — failures fall back to zero pose.
+	r.populateArmBases(ctx)
 
 	s.mu.Lock()
 	prevCancel := s.tickCancel
@@ -191,6 +197,13 @@ func (s *service) Reconfigure(
 		s.presets = append(s.presets[:0], cfg.Presets...)
 	} else {
 		s.presets = []string{"single_arm_obstacle"}
+	}
+	s.armScenarios = nil
+	if len(cfg.ArmScenarios) > 0 {
+		s.armScenarios = make(map[string]string, len(cfg.ArmScenarios))
+		for k, v := range cfg.ArmScenarios {
+			s.armScenarios[k] = v
+		}
 	}
 	s.pinnedScenario = ""
 
@@ -285,11 +298,21 @@ func (s *service) Close(ctx context.Context) error {
 	return nil
 }
 
-// runLoop is the scenario driver. It cycles through configured presets,
-// running each one and pausing between iterations. DoCommand verbs poke
-// `advanceSig` to wake it up out-of-band.
+// runLoop is the scenario driver. In parallel mode (cfg.ArmScenarios non-
+// empty) it spawns one goroutine per (arm, scenario) pair and waits for
+// ctx to cancel. In legacy sequential mode it cycles through cfg.Presets
+// on r.armOrder[0].
 func (s *service) runLoop(ctx context.Context, done chan struct{}) {
 	defer close(done)
+
+	s.mu.Lock()
+	parallel := s.armScenarios
+	s.mu.Unlock()
+	if len(parallel) > 0 {
+		s.runParallelLoops(ctx, parallel)
+		return
+	}
+
 	cursor := 0
 	for {
 		if ctx.Err() != nil {
@@ -340,7 +363,7 @@ func (s *service) runLoop(ctx context.Context, done chan struct{}) {
 		}
 
 		s.logger.Infow("running scenario", "key", key)
-		uuids, err := s.runScenario(ctx, *scn)
+		uuids, err := s.runScenario(ctx, *scn, "")
 		if err != nil {
 			s.logger.Warnw("scenario failed", "key", key, "err", err)
 		}
@@ -348,6 +371,59 @@ func (s *service) runLoop(ctx context.Context, done chan struct{}) {
 		// They're idempotent (same UUID) on re-emit, so this just leaves
 		// the scene populated until the user actively clears it.
 		_ = uuids
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Duration(interval * float64(time.Second))):
+		case <-s.advanceSig:
+		}
+	}
+}
+
+// runParallelLoops fan-outs one goroutine per (arm, scenarioKey) entry in
+// armScenarios. Each goroutine independently runs its scenario on the
+// configured interval. Returns when ctx is canceled and every per-arm
+// goroutine has drained.
+func (s *service) runParallelLoops(ctx context.Context, bindings map[string]string) {
+	var wg sync.WaitGroup
+	for armName, key := range bindings {
+		armName, key := armName, key // capture
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s.runArmLoop(ctx, armName, key)
+		}()
+	}
+	s.logger.Infow("parallel-mode scenario loops started", "count", len(bindings))
+	wg.Wait()
+}
+
+// runArmLoop is one per-arm scenario goroutine. It re-fetches a fresh
+// Scenario value each iteration so per-scenario counters (e.g.
+// obstacle_progression's cycle counter) reset per goroutine — each arm
+// gets independent counter state, which is the natural behavior in
+// parallel mode.
+func (s *service) runArmLoop(ctx context.Context, armName, scenarioKey string) {
+	scn := presetByKey(scenarioKey)
+	if scn == nil {
+		s.logger.Warnw("runArmLoop: unknown scenario; arm idle", "arm", armName, "key", scenarioKey)
+		return
+	}
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		s.mu.Lock()
+		interval := s.intervalS
+		paused := s.paused
+		s.mu.Unlock()
+
+		if !paused {
+			s.logger.Infow("parallel: running scenario", "arm", armName, "key", scenarioKey)
+			if _, err := s.runScenario(ctx, *scn, armName); err != nil {
+				s.logger.Warnw("parallel: scenario failed", "arm", armName, "key", scenarioKey, "err", err)
+			}
+		}
 		select {
 		case <-ctx.Done():
 			return

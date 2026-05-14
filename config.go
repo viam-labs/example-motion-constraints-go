@@ -20,8 +20,17 @@ type Config struct {
 	// IntervalS is the pause in seconds between scenarios in loop mode.
 	IntervalS float64 `json:"interval_s,omitempty"`
 
-	// Presets selects which built-in scenarios to run in order.
+	// Presets selects which built-in scenarios to run in order on the
+	// FIRST arm in legacy sequential mode. Ignored when ArmScenarios is
+	// non-empty (parallel-per-arm mode takes precedence).
 	Presets []string `json:"presets,omitempty"`
+
+	// ArmScenarios binds each arm to a preset key. When non-empty, the
+	// scenario loop runs in parallel: one goroutine per (arm, scenario)
+	// pair, each on its own interval. Arms not listed in this map idle.
+	// Mutually exclusive with Presets at runtime — if both are set,
+	// ArmScenarios wins and Presets is ignored.
+	ArmScenarios map[string]string `json:"arm_scenarios,omitempty"`
 
 	// AbortOnCollision: if a pre-flight collision check trips, skip execution.
 	AbortOnCollision *bool `json:"abort_on_collision,omitempty"`

@@ -14,9 +14,10 @@ import (
 // presetByKey returns the Scenario for a built-in preset key. Returns nil
 // for keys we don't recognize; the runner logs+skips nil scenarios.
 //
-// Each preset constructor returns a *fresh* Scenario value, so callers
-// that want per-scenario state (cycle counters, etc.) should rely on
-// closures over local atomics — see presetObstacleProgression.
+// Each preset constructor returns a *fresh* Scenario value so per-arm
+// scenario state lives in closures over local atomics — the parallel
+// runner (Phase 10) keeps separate Scenario instances per arm and they
+// don't share state.
 func presetByKey(key string) *Scenario {
 	switch key {
 	case "single_arm_obstacle":
@@ -42,57 +43,86 @@ func presetByKey(key string) *Scenario {
 	}
 }
 
+// ---- shared coordinate helpers ---------------------------------------------
+
+// applyArmOffset translates a pose by the arm's world base. Used to place
+// a scenario's relative-to-arm anchor or obstacle pose into world coords.
+func applyArmOffset(armBase spatialmath.Pose, relative r3.Vector) spatialmath.Pose {
+	if armBase == nil {
+		return spatialmath.NewPoseFromPoint(relative)
+	}
+	bp := armBase.Point()
+	return spatialmath.NewPoseFromPoint(r3.Vector{
+		X: bp.X + relative.X,
+		Y: bp.Y + relative.Y,
+		Z: bp.Z + relative.Z,
+	})
+}
+
+// armPrefixedBox is staticBox with the arm name prefixed onto the geometry
+// label so two arms running the same preset don't collide in the scene map.
+func armPrefixedBox(armName, scenarioKey, suffix string, world r3.Vector, dx, dy, dz float64) (spatialmath.Geometry, error) {
+	label := fmt.Sprintf("%s:%s:%s", armName, scenarioKey, suffix)
+	return staticBox(label, world.X, world.Y, world.Z, dx, dy, dz)
+}
+
+// dist3 returns the squared distance between two points (sufficient for
+// "closer vs farther" comparisons in alternateBetweenAnchors).
+func dist3(dx, dy, dz float64) float64 {
+	return dx*dx + dy*dy + dz*dz
+}
+
 // ---- single_arm_obstacle ---------------------------------------------------
 
 // presetSingleArmObstacle is the simplest motion-planning demo: one arm
 // swings between two anchor poses on either side of a static box obstacle.
 func presetSingleArmObstacle() Scenario {
+	// Relative-to-arm coordinates. World pose comes from arm base + offset.
 	const (
-		boxX, boxY, boxZ    = 400.0, 0.0, 350.0
-		boxDX, boxDY, boxDZ = 150.0, 300.0, 200.0
+		boxOffsetX, boxOffsetY, boxOffsetZ = 400.0, 0.0, 350.0
+		boxDX, boxDY, boxDZ                = 150.0, 300.0, 200.0
 	)
-	anchorA := spatialmath.NewPoseFromPoint(r3.Vector{X: 500, Y: 300, Z: 400})
-	anchorB := spatialmath.NewPoseFromPoint(r3.Vector{X: 500, Y: -300, Z: 400})
+	anchorAOffset := r3.Vector{X: 500, Y: 300, Z: 400}
+	anchorBOffset := r3.Vector{X: 500, Y: -300, Z: 400}
 
 	return Scenario{
 		Key:         "single_arm_obstacle",
 		Description: "One arm swings back and forth around a static box obstacle.",
-		Setup: func(ctx context.Context, r *resolved) ([]scenarioObstacle, error) {
-			geom, err := staticBox("single_arm_obstacle:box", boxX, boxY, boxZ, boxDX, boxDY, boxDZ)
+		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
+			base := r.armBase(armName).Point()
+			pos := r3.Vector{X: base.X + boxOffsetX, Y: base.Y + boxOffsetY, Z: base.Z + boxOffsetZ}
+			geom, err := armPrefixedBox(armName, "single_arm_obstacle", "box", pos, boxDX, boxDY, boxDZ)
 			if err != nil {
 				return nil, err
 			}
 			return []scenarioObstacle{{Geom: geom, Color: &ColorObstacle}}, nil
 		},
-		Plan: alternateBetweenAnchors("single_arm_obstacle", anchorA, anchorB, nil),
+		Plan: alternateBetweenAnchors("single_arm_obstacle", anchorAOffset, anchorBOffset, nil),
 	}
 }
 
 // ---- linear_constraint -----------------------------------------------------
 
-// presetLinearConstraint asks the planner to hold the EE on a straight
-// cartesian line between two anchors. With a centered box, the strict
-// line tolerance often forces the planner to return either a tightly
-// curved path or no plan at all — both outcomes are educational.
 func presetLinearConstraint() Scenario {
 	const (
 		boxX, boxY, boxZ    = 400.0, 0.0, 250.0
 		boxDX, boxDY, boxDZ = 100.0, 100.0, 100.0
 	)
-	anchorA := spatialmath.NewPoseFromPoint(r3.Vector{X: 500, Y: 250, Z: 400})
-	anchorB := spatialmath.NewPoseFromPoint(r3.Vector{X: 500, Y: -250, Z: 400})
+	anchorA := r3.Vector{X: 500, Y: 250, Z: 400}
+	anchorB := r3.Vector{X: 500, Y: -250, Z: 400}
 
 	constraints := &motionplan.Constraints{
 		LinearConstraint: []motionplan.LinearConstraint{
 			{LineToleranceMm: 10, OrientationToleranceDegs: 30},
 		},
 	}
-
 	return Scenario{
 		Key:         "linear_constraint",
 		Description: "Hold the EE on a straight line between anchors with a centered box obstacle.",
-		Setup: func(ctx context.Context, r *resolved) ([]scenarioObstacle, error) {
-			geom, err := staticBox("linear_constraint:box", boxX, boxY, boxZ, boxDX, boxDY, boxDZ)
+		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
+			base := r.armBase(armName).Point()
+			pos := r3.Vector{X: base.X + boxX, Y: base.Y + boxY, Z: base.Z + boxZ}
+			geom, err := armPrefixedBox(armName, "linear_constraint", "box", pos, boxDX, boxDY, boxDZ)
 			if err != nil {
 				return nil, err
 			}
@@ -104,29 +134,26 @@ func presetLinearConstraint() Scenario {
 
 // ---- orientation_constraint ------------------------------------------------
 
-// presetOrientationConstraint asks the planner to hold the EE orientation
-// fixed (within a small tolerance) while moving between two anchors. The
-// box is small and offset so the planner has to maneuver while keeping
-// the tool aligned — illustrating "pouring"-style motion.
 func presetOrientationConstraint() Scenario {
 	const (
 		boxX, boxY, boxZ    = 400.0, 0.0, 350.0
 		boxDX, boxDY, boxDZ = 100.0, 200.0, 100.0
 	)
-	anchorA := spatialmath.NewPoseFromPoint(r3.Vector{X: 500, Y: 300, Z: 400})
-	anchorB := spatialmath.NewPoseFromPoint(r3.Vector{X: 500, Y: -300, Z: 400})
+	anchorA := r3.Vector{X: 500, Y: 300, Z: 400}
+	anchorB := r3.Vector{X: 500, Y: -300, Z: 400}
 
 	constraints := &motionplan.Constraints{
 		OrientationConstraint: []motionplan.OrientationConstraint{
 			{OrientationToleranceDegs: 15},
 		},
 	}
-
 	return Scenario{
 		Key:         "orientation_constraint",
 		Description: "Keep the EE orientation within 15 deg while moving between anchors.",
-		Setup: func(ctx context.Context, r *resolved) ([]scenarioObstacle, error) {
-			geom, err := staticBox("orientation_constraint:box", boxX, boxY, boxZ, boxDX, boxDY, boxDZ)
+		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
+			base := r.armBase(armName).Point()
+			pos := r3.Vector{X: base.X + boxX, Y: base.Y + boxY, Z: base.Z + boxZ}
+			geom, err := armPrefixedBox(armName, "orientation_constraint", "box", pos, boxDX, boxDY, boxDZ)
 			if err != nil {
 				return nil, err
 			}
@@ -138,42 +165,28 @@ func presetOrientationConstraint() Scenario {
 
 // ---- dynamic_obstacle ------------------------------------------------------
 
-// presetDynamicObstacle has the obstacle continuously oscillate between
-// two world-frame poses while the arm swings between its anchor pair.
-// The plan is recomputed each scenario iteration using the obstacle's
-// pose at the moment of planning, so the visualization shows: planned
-// arc → arm executes → obstacle drifts away to a new spot → next plan
-// reroutes around the new position. Phase 8 wiring; Phase 6 collision
-// red-tint still fires if a snapshot is unlucky.
 func presetDynamicObstacle() Scenario {
-	anchorA := spatialmath.NewPoseFromPoint(r3.Vector{X: 500, Y: 300, Z: 400})
-	anchorB := spatialmath.NewPoseFromPoint(r3.Vector{X: 500, Y: -300, Z: 400})
-
-	// The obstacle oscillates side-to-side across the arm's working volume.
-	obstacleAnimA := spatialmath.NewPoseFromPoint(r3.Vector{X: 400, Y: 200, Z: 350})
-	obstacleAnimB := spatialmath.NewPoseFromPoint(r3.Vector{X: 400, Y: -200, Z: 350})
+	anchorA := r3.Vector{X: 500, Y: 300, Z: 400}
+	anchorB := r3.Vector{X: 500, Y: -300, Z: 400}
+	animAOffset := r3.Vector{X: 400, Y: 200, Z: 350}
+	animBOffset := r3.Vector{X: 400, Y: -200, Z: 350}
 
 	return Scenario{
 		Key:         "dynamic_obstacle",
 		Description: "Obstacle box oscillates continuously while the arm swings between anchors.",
-		Setup: func(ctx context.Context, r *resolved) ([]scenarioObstacle, error) {
-			// Start the obstacle at AnchorA; the animation tick will move
-			// it from there. We can't read s.advanceAnimations' current
-			// pose from inside the preset (the scenario doesn't have
-			// service handle), so the planner uses whatever pose was
-			// emitted most recently — close enough for educational use.
-			geom, err := staticBox("dynamic_obstacle:box",
-				obstacleAnimA.Point().X, obstacleAnimA.Point().Y, obstacleAnimA.Point().Z,
-				150, 150, 200,
-			)
+		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
+			base := r.armBase(armName).Point()
+			startPos := r3.Vector{X: base.X + animAOffset.X, Y: base.Y + animAOffset.Y, Z: base.Z + animAOffset.Z}
+			endPos := r3.Vector{X: base.X + animBOffset.X, Y: base.Y + animBOffset.Y, Z: base.Z + animBOffset.Z}
+			geom, err := armPrefixedBox(armName, "dynamic_obstacle", "box", startPos, 150, 150, 200)
 			if err != nil {
 				return nil, err
 			}
 			return []scenarioObstacle{{
 				Geom: geom, Color: &ColorObstacle,
 				Anim: &obstacleAnimation{
-					AnchorA: obstacleAnimA,
-					AnchorB: obstacleAnimB,
+					AnchorA: spatialmath.NewPoseFromPoint(startPos),
+					AnchorB: spatialmath.NewPoseFromPoint(endPos),
 					PeriodS: 6.0,
 				},
 			}}, nil
@@ -184,153 +197,133 @@ func presetDynamicObstacle() Scenario {
 
 // ---- multi_arm_choreography ------------------------------------------------
 
-// presetMultiArmChoreography reaches each configured arm toward a shared
-// center point in world coordinates. Other arms' link geometries are
-// injected into the WorldState for each plan call (the Phase 3 spike
-// confirmed this is the only way to make planning respect siblings).
-//
-// Best run with a 2x2 grid (4 arms at the corners). Falls back to the
-// single configured arm if fewer are present.
+// presetMultiArmChoreography drives the designated arm toward a shared
+// world point with all other configured arms treated as obstacles.
+// When multiple arms are assigned this preset in parallel mode, each
+// independently plans toward the center while seeing the others as
+// (currently posed) obstacles — collisions are expected and the
+// red-tint highlights which arm crashed into which.
 func presetMultiArmChoreography() Scenario {
-	const sharedX, sharedY, sharedZ = 0.0, 0.0, 700.0
-	goal := spatialmath.NewPoseFromPoint(r3.Vector{X: sharedX, Y: sharedY, Z: sharedZ})
+	// Shared world target: 0,0,700 (absolute, not relative to any arm).
+	goal := spatialmath.NewPoseFromPoint(r3.Vector{X: 0, Y: 0, Z: 700})
 
 	return Scenario{
 		Key:         "multi_arm_choreography",
-		Description: "Every configured arm reaches toward a shared center; arms treat each other as obstacles.",
-		Setup: func(ctx context.Context, r *resolved) ([]scenarioObstacle, error) {
-			// No static obstacles for this scenario — the obstacles are
-			// the sibling arms themselves, injected per-plan inside Plan().
+		Description: "Arms reach toward a shared world center; sibling arms become obstacles.",
+		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
+			// No declared obstacles — siblings are injected inside Plan.
 			return nil, nil
 		},
 		Plan: func(
 			ctx context.Context,
 			r *resolved,
 			fs *referenceframe.FrameSystem,
+			armName string,
 			obstacles []scenarioObstacle,
-		) (string, motionplan.Plan, error) {
-			if len(r.armOrder) == 0 {
-				return "", nil, fmt.Errorf("multi_arm_choreography requires at least one arm")
-			}
-			// Pick the next arm in round-robin order via shared state.
-			armIdx := nextMultiArmIndex(len(r.armOrder))
-			armName := r.armOrder[armIdx]
-
-			// Inject the *other* arms' link geometries as world obstacles
-			// so the planner avoids them. Sibling arms stay where they
-			// currently are (no recomputation of their motion in this
-			// scenario; multi-arm coordination is Phase 8+ work).
-			siblingObstacles := []scenarioObstacle{}
-			for i, name := range r.armOrder {
-				if i == armIdx {
-					continue
-				}
-				sibArm, ok := r.arms[name]
-				if !ok {
-					continue
-				}
-				model, err := sibArm.Kinematics(ctx)
-				if err != nil || model == nil {
-					continue
-				}
-				joints, err := sibArm.JointPositions(ctx, nil)
-				if err != nil {
-					continue
-				}
-				gif, err := model.Geometries(joints)
-				if err != nil || gif == nil {
-					continue
-				}
-				// Build a one-frame inputs map for fs.Transform to use the
-				// sibling arm's actual current joint positions.
-				inputs := referenceframe.FrameSystemInputs{name: joints}
-				for j, n2 := range r.armOrder {
-					if j == armIdx || j == i {
-						continue
-					}
-					if sib2, ok := r.arms[n2]; ok {
-						if jp2, err := sib2.JointPositions(ctx, nil); err == nil {
-							inputs[n2] = jp2
-						}
-					}
-				}
-				worldGeoms := geometriesToWorld(fs, inputs, name, gif)
-				for k, g := range worldGeoms {
-					// Rename to avoid duplicate-label collisions with
-					// the framesystem-owned copies.
-					g.SetLabel(fmt.Sprintf("sibling:%s:%d", name, k))
-					siblingObstacles = append(siblingObstacles, scenarioObstacle{Geom: g, Color: &ColorObstacle})
-				}
-			}
+		) (motionplan.Plan, error) {
+			siblingObstacles := injectSiblingArmObstacles(ctx, r, fs, armName)
 			plan, err := planSingleArmToPose(ctx, r, fs, armName, goal, siblingObstacles, nil)
 			if err != nil {
-				return armName, nil, err
+				return nil, err
 			}
-			return armName, plan, nil
+			return plan, nil
 		},
 	}
 }
 
-var multiArmCursor int64
-
-func nextMultiArmIndex(armCount int) int {
-	if armCount <= 1 {
-		return 0
+func injectSiblingArmObstacles(
+	ctx context.Context,
+	r *resolved,
+	fs *referenceframe.FrameSystem,
+	movingArm string,
+) []scenarioObstacle {
+	siblingObstacles := []scenarioObstacle{}
+	inputs := referenceframe.FrameSystemInputs{}
+	for _, name := range r.armOrder {
+		if name == movingArm {
+			continue
+		}
+		sibArm, ok := r.arms[name]
+		if !ok {
+			continue
+		}
+		joints, err := sibArm.JointPositions(ctx, nil)
+		if err == nil {
+			inputs[name] = joints
+		}
 	}
-	i := int(atomic.AddInt64(&multiArmCursor, 1)-1) % armCount
-	if i < 0 {
-		i = -i
+	for _, name := range r.armOrder {
+		if name == movingArm {
+			continue
+		}
+		sibArm, ok := r.arms[name]
+		if !ok {
+			continue
+		}
+		model, err := sibArm.Kinematics(ctx)
+		if err != nil || model == nil {
+			continue
+		}
+		joints := inputs[name]
+		gif, err := model.Geometries(joints)
+		if err != nil || gif == nil {
+			continue
+		}
+		worldGeoms := geometriesToWorld(fs, inputs, name, gif)
+		for k, g := range worldGeoms {
+			g.SetLabel(fmt.Sprintf("sibling:%s:%d", name, k))
+			siblingObstacles = append(siblingObstacles, scenarioObstacle{Geom: g, Color: &ColorObstacle})
+		}
 	}
-	return i
+	return siblingObstacles
 }
 
 // ---- obstacle_progression --------------------------------------------------
 
-// presetObstacleProgression reuses the single_arm_obstacle anchor pair but
-// cycles the obstacle set on each iteration, adding one more geometry at
-// a time. Pedagogical: shows the planner producing visibly different
-// trajectories as constraints accumulate, and once the workspace is too
-// tight the trajectory should fail collision check (red-tint payoff).
 func presetObstacleProgression() Scenario {
-	anchorA := spatialmath.NewPoseFromPoint(r3.Vector{X: 500, Y: 300, Z: 400})
-	anchorB := spatialmath.NewPoseFromPoint(r3.Vector{X: 500, Y: -300, Z: 400})
-
+	anchorA := r3.Vector{X: 500, Y: 300, Z: 400}
+	anchorB := r3.Vector{X: 500, Y: -300, Z: 400}
 	var counter int64
 
 	return Scenario{
 		Key:         "obstacle_progression",
 		Description: "Same anchors; obstacles accumulate each cycle (box, +floor, +ceiling, +walls).",
-		Setup: func(ctx context.Context, r *resolved) ([]scenarioObstacle, error) {
+		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
 			stage := int(atomic.AddInt64(&counter, 1)-1) % 4
+			base := r.armBase(armName).Point()
 
 			obstacles := []scenarioObstacle{}
-			boxGeom, err := staticBox("op:box", 400, 0, 350, 150, 300, 200)
+			boxPos := r3.Vector{X: base.X + 400, Y: base.Y + 0, Z: base.Z + 350}
+			boxGeom, err := armPrefixedBox(armName, "obstacle_progression", "box", boxPos, 150, 300, 200)
 			if err != nil {
 				return nil, err
 			}
 			obstacles = append(obstacles, scenarioObstacle{Geom: boxGeom, Color: &ColorObstacle})
 
-			// Stage 0: just the box. Stages 1-3 add successively.
 			if stage >= 1 {
-				floor, err := staticBox("op:floor", 0, 0, -5, 2500, 2500, 10)
+				floor, err := armPrefixedBox(armName, "obstacle_progression", "floor",
+					r3.Vector{X: base.X, Y: base.Y, Z: base.Z - 5}, 2500, 2500, 10)
 				if err != nil {
 					return nil, err
 				}
 				obstacles = append(obstacles, scenarioObstacle{Geom: floor, Color: &ColorObstacle})
 			}
 			if stage >= 2 {
-				ceiling, err := staticBox("op:ceiling", 0, 0, 750, 2500, 2500, 10)
+				ceiling, err := armPrefixedBox(armName, "obstacle_progression", "ceiling",
+					r3.Vector{X: base.X, Y: base.Y, Z: base.Z + 750}, 2500, 2500, 10)
 				if err != nil {
 					return nil, err
 				}
 				obstacles = append(obstacles, scenarioObstacle{Geom: ceiling, Color: &ColorObstacle})
 			}
 			if stage >= 3 {
-				wallPlus, err := staticBox("op:wall_plusY", 0, 800, 350, 2500, 10, 800)
+				wallPlus, err := armPrefixedBox(armName, "obstacle_progression", "wall_plusY",
+					r3.Vector{X: base.X, Y: base.Y + 800, Z: base.Z + 350}, 2500, 10, 800)
 				if err != nil {
 					return nil, err
 				}
-				wallMinus, err := staticBox("op:wall_minusY", 0, -800, 350, 2500, 10, 800)
+				wallMinus, err := armPrefixedBox(armName, "obstacle_progression", "wall_minusY",
+					r3.Vector{X: base.X, Y: base.Y - 800, Z: base.Z + 350}, 2500, 10, 800)
 				if err != nil {
 					return nil, err
 				}
@@ -347,25 +340,29 @@ func presetObstacleProgression() Scenario {
 
 // ---- shared helpers --------------------------------------------------------
 
-// alternateBetweenAnchors returns a Plan hook that drives the configured
-// arm toward whichever of two anchors is farther from its current EE
-// pose. Optional constraints flow through to PlanMotion.
+// alternateBetweenAnchors returns a Plan hook that swings the designated
+// arm between two anchor offsets (in the arm's local frame). The hook
+// chooses whichever anchor is farther from the arm's current EE pose so
+// the motion looks like a continuous swing.
 func alternateBetweenAnchors(
 	scenarioKey string,
-	anchorA, anchorB spatialmath.Pose,
+	anchorAOffset, anchorBOffset r3.Vector,
 	constraints *motionplan.Constraints,
-) func(context.Context, *resolved, *referenceframe.FrameSystem, []scenarioObstacle) (string, motionplan.Plan, error) {
+) func(context.Context, *resolved, *referenceframe.FrameSystem, string, []scenarioObstacle) (motionplan.Plan, error) {
 	return func(
 		ctx context.Context,
 		r *resolved,
 		fs *referenceframe.FrameSystem,
+		armName string,
 		obstacles []scenarioObstacle,
-	) (string, motionplan.Plan, error) {
-		if len(r.armOrder) == 0 {
-			return "", nil, fmt.Errorf("%s requires at least one configured arm", scenarioKey)
+	) (motionplan.Plan, error) {
+		armRes, ok := r.arms[armName]
+		if !ok {
+			return nil, fmt.Errorf("%s: arm %q is not configured", scenarioKey, armName)
 		}
-		armName := r.armOrder[0]
-		armRes := r.arms[armName]
+		base := r.armBase(armName)
+		anchorA := applyArmOffset(base, anchorAOffset)
+		anchorB := applyArmOffset(base, anchorBOffset)
 		goal := anchorA
 		if armRes != nil {
 			if ee, err := armRes.EndPosition(ctx, nil); err == nil && ee != nil {
@@ -381,12 +378,8 @@ func alternateBetweenAnchors(
 		}
 		plan, err := planSingleArmToPose(ctx, r, fs, armName, goal, obstacles, constraints)
 		if err != nil {
-			return armName, nil, err
+			return nil, err
 		}
-		return armName, plan, nil
+		return plan, nil
 	}
-}
-
-func dist3(dx, dy, dz float64) float64 {
-	return dx*dx + dy*dy + dz*dz
 }
