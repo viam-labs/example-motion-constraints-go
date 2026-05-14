@@ -623,12 +623,16 @@ func planSingleArmToPose(
 	// problem the planner can hang indefinitely. A hard ctx deadline
 	// kicks it out with DeadlineExceeded so the loop can move on.
 	//
-	// 15s gives cbirrt enough room for constrained scenarios (linear/
-	// orientation) under heavy concurrent load (12 plans in flight); 8s
-	// was too aggressive — constrained scenarios consistently exceeded
-	// it. Most plans still complete in <1s; the budget only matters for
-	// the genuinely hard cases.
-	const planBudget = 15 * time.Second
+	// 6s budget. Most plans complete in <1s; the budget only matters for
+	// genuinely hard cases. Empirical observation: a STRUGGLING scenario
+	// (one that always hits the budget) costs ~budget worth of CPU per
+	// cycle, dramatically degrading viam-server's WebRTC stream and
+	// making the browser viz feel sluggish — a few timeout-prone arms
+	// have outsized impact on apparent responsiveness regardless of how
+	// many healthy arms surround them. Keep the budget short so failure
+	// is cheap; tighten tolerances or shorten swings on the scenario
+	// itself if a hard problem is genuinely needed.
+	const planBudget = 6 * time.Second
 	planCtx, cancel := context.WithTimeout(ctx, planBudget)
 	defer cancel()
 	plan, meta, err := armplanning.PlanMotion(planCtx, logger, req)

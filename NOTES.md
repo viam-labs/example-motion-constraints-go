@@ -66,6 +66,31 @@ _Reserved — populate as we discover them while building scenarios._
 
 _Reserved — populate as we identify issues that should go upstream._
 
+## Perf characteristic: struggling scenarios dominate
+
+Empirical finding (16-arm stress test, 2026-05-14): a 16-arm grid of
+arms running *healthy* scenarios (plans complete in <1s) is browser-
+responsive. Replacing four of those arms with scenarios that
+consistently hit the plan budget makes the entire viz noticeably
+sluggish, even though the other 12 arms continue working normally.
+
+Mechanism: each struggling arm pegs a CPU core in cbirrt for the
+plan budget duration. Multiple struggling arms in parallel saturate
+the host, which then can't keep viam-server's WebRTC frame pipeline
+fed at the rate the browser expects. Result: browser stutters across
+*all* arm visualizations.
+
+Implication for designing presets:
+
+- Default to scenarios where the planner reliably succeeds. Use
+  `interval_s` headroom rather than tight constraints if you need a
+  "harder" demonstration.
+- Keep the plan budget short (`planBudget = 6 * time.Second` as of
+  this commit) so failure is cheap — limits worst-case CPU burn.
+- A scenario that needs a longer budget to occasionally succeed is
+  usually better expressed as smaller motions + a tighter tolerance
+  than as a big motion + a generous budget.
+
 ## Improvements deferred
 
 ### Add `obstacle_progression` preset (queued 2026-05-13)
