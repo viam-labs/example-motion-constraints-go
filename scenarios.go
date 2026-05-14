@@ -540,11 +540,24 @@ func planSingleArmToPose(
 	}
 	if log != nil {
 		gp := goal.Point()
+		gov := goal.Orientation().OrientationVectorDegrees()
+		// Compute current EE in world for a same-units comparison with
+		// the goal — when the planner says "you're already there", this
+		// pair will be near-equal.
+		var currentEEWorld []float64
+		if ee, err := armRes.EndPosition(ctx, nil); err == nil && ee != nil {
+			eePt := ee.Point()
+			basePt := r.armBase(armName).Point()
+			currentEEWorld = []float64{basePt.X + eePt.X, basePt.Y + eePt.Y, basePt.Z + eePt.Z}
+		}
 		log.Infow("plan: built request",
 			"arm", armName,
-			"goal_xyz", []float64{gp.X, gp.Y, gp.Z},
-			"start_frames", keysOfFrameSystemInputs(startInputs),
-			"obstacles", len(obstacles),
+			"goal_world_xyz", []float64{gp.X, gp.Y, gp.Z},
+			"goal_world_ov_deg", []float64{gov.OX, gov.OY, gov.OZ, gov.Theta},
+			"current_ee_world_xyz", currentEEWorld,
+			"current_joint_count", len(current),
+			"obstacles_in_world_state", len(obstacles),
+			"frames_in_start_state", len(startInputs),
 		)
 	}
 

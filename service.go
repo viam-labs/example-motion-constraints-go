@@ -18,7 +18,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/geo/r3"
 	commonpb "go.viam.com/api/common/v1"
 	pb "go.viam.com/api/service/worldstatestore/v1"
 	"go.viam.com/rdk/logging"
@@ -257,13 +256,6 @@ func (s *service) Reconfigure(
 	s.mu.Unlock()
 	go s.runLoop(tickCtx, done)
 	go s.animationLoop(animCtx, animDone)
-
-	// Emit per-arm label markers in parallel mode so every arm in the
-	// grid is identifiable at a glance. In legacy sequential mode the
-	// single configured arm doesn't need a tag; skip.
-	if len(cfg.ArmScenarios) > 0 {
-		s.emitArmLabels(cfg.ArmScenarios, r)
-	}
 
 	s.logger.Infow("example-motion-constraints-go (re)configured",
 		"name", conf.ResourceName().Name,
@@ -539,40 +531,6 @@ func (s *service) emitADDED(
 		Transform:  tf,
 	})
 	return nil
-}
-
-// emitArmLabels places a small high-contrast marker just below each
-// configured arm's mount, with the geometry's label set to
-// "<armName>: <scenarioKey>". The 3D viewer surfaces these labels in
-// its entity panel and on hover, giving each arm a readable tag in the
-// grid demo so a user can tell which arm is running which scenario.
-//
-// Markers persist across reconfigures and scenario iterations because
-// their UUIDs are stable per (arm, scenario) pair.
-func (s *service) emitArmLabels(armScenarios map[string]string, deps *resolved) {
-	if deps == nil || armScenarios == nil {
-		return
-	}
-	for armName, scenarioKey := range armScenarios {
-		base := deps.armBase(armName)
-		if base == nil {
-			continue
-		}
-		basePt := base.Point()
-		// Position the tag at the arm's mount-X/Y, 80mm below mount Z so
-		// it sits on/just under the floor independent of the arm's
-		// current configuration.
-		tagPose := spatialmath.NewPoseFromPoint(r3.Vector{
-			X: basePt.X,
-			Y: basePt.Y,
-			Z: basePt.Z - 80,
-		})
-		label := fmt.Sprintf("%s: %s", armName, scenarioKey)
-		uuid := []byte("arm_tag:" + armName)
-		geom := sphereGeometry(40, label)
-		color := ColorArmTag
-		_ = s.emitADDED(uuid, tagPose, geom, &color, opacityPtr(0.95))
-	}
 }
 
 // emitAxesMarker publishes a "reference frame" entity at the given pose —

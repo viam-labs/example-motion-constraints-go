@@ -371,6 +371,7 @@ func alternateBetweenAnchors(
 			return nil, fmt.Errorf("%s: arm %q is not configured", scenarioKey, armName)
 		}
 		goalOffset := anchorAOffset
+		pickedLabel := "A"
 		if armRes != nil {
 			if ee, err := armRes.EndPosition(ctx, nil); err == nil && ee != nil {
 				// EE is in arm-local coords; anchors are too.
@@ -379,19 +380,37 @@ func alternateBetweenAnchors(
 				dB := dist3(eePt.X-anchorBOffset.X, eePt.Y-anchorBOffset.Y, eePt.Z-anchorBOffset.Z)
 				if dA < dB {
 					goalOffset = anchorBOffset
+					pickedLabel = "B"
 				}
 				if r.logger != nil {
-					r.logger.Infow("alternate: anchor choice",
+					armBasePt := r.armBase(armName).Point()
+					eeWorld := []float64{armBasePt.X + eePt.X, armBasePt.Y + eePt.Y, armBasePt.Z + eePt.Z}
+					r.logger.Infow("task-space: anchor choice",
 						"arm", armName,
+						"scenario", scenarioKey,
+						"arm_base_world", []float64{armBasePt.X, armBasePt.Y, armBasePt.Z},
 						"ee_local", []float64{eePt.X, eePt.Y, eePt.Z},
+						"ee_world", eeWorld,
+						"anchorA_local", []float64{anchorAOffset.X, anchorAOffset.Y, anchorAOffset.Z},
+						"anchorB_local", []float64{anchorBOffset.X, anchorBOffset.Y, anchorBOffset.Z},
 						"dist_to_A_sq", dA,
 						"dist_to_B_sq", dB,
-						"picked", map[bool]string{true: "B", false: "A"}[dA < dB],
+						"picked", pickedLabel,
 					)
 				}
 			}
 		}
 		goal := applyArmOffset(r.armBase(armName), goalOffset)
+		if r.logger != nil {
+			goalPt := goal.Point()
+			r.logger.Infow("task-space: cartesian goal",
+				"arm", armName,
+				"scenario", scenarioKey,
+				"anchor_picked", pickedLabel,
+				"goal_world", []float64{goalPt.X, goalPt.Y, goalPt.Z},
+				"goal_offset_local", []float64{goalOffset.X, goalOffset.Y, goalOffset.Z},
+			)
+		}
 		plan, err := planSingleArmToPose(ctx, r, fs, armName, goal, obstacles, constraints)
 		if err != nil {
 			return nil, err
