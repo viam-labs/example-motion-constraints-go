@@ -256,7 +256,32 @@ func (s *service) runScenario(ctx context.Context, scn Scenario, armName string)
 		return addedUUIDs, nil
 	}
 	s.recordStage(armName, "executing")
-	log.Infow("scenario: executing", "arm", armName, "waypoints", len(armInputs))
+	// Joint-delta diagnostic: dump the targets we're about to send and
+	// (after the move) read joints back to confirm the arm actually
+	// changed configuration. If beforeJoints == afterJoints after a
+	// supposedly-animated move, we know the simulated arm isn't ticking.
+	beforeJoints, _ := armRes.JointPositions(ctx, nil)
+	targetJoints := armInputs[len(armInputs)-1]
+	maxDelta := 0.0
+	for i := range targetJoints {
+		if i >= len(beforeJoints) {
+			break
+		}
+		d := float64(targetJoints[i] - beforeJoints[i])
+		if d < 0 {
+			d = -d
+		}
+		if d > maxDelta {
+			maxDelta = d
+		}
+	}
+	log.Infow("scenario: executing",
+		"arm", armName,
+		"waypoints", len(armInputs),
+		"before_joints", inputsToFloats(beforeJoints),
+		"target_joints", inputsToFloats(targetJoints),
+		"max_joint_delta_rad", maxDelta,
+	)
 	if len(armInputs) > 1 {
 		execStart := time.Now()
 		if err := armRes.MoveThroughJointPositions(ctx, armInputs[1:], nil, nil); err != nil {
@@ -268,10 +293,27 @@ func (s *service) runScenario(ctx context.Context, scn Scenario, armName string)
 			)
 			return addedUUIDs, fmt.Errorf("execute on %q: %w", armName, err)
 		}
+		afterJoints, _ := armRes.JointPositions(ctx, nil)
+		actualMaxDelta := 0.0
+		for i := range afterJoints {
+			if i >= len(beforeJoints) {
+				break
+			}
+			d := float64(afterJoints[i] - beforeJoints[i])
+			if d < 0 {
+				d = -d
+			}
+			if d > actualMaxDelta {
+				actualMaxDelta = d
+			}
+		}
 		log.Infow("scenario: executed",
 			"arm", armName,
 			"exec_ms", time.Since(execStart).Milliseconds(),
 			"total_ms", time.Since(scenarioStart).Milliseconds(),
+			"after_joints", inputsToFloats(afterJoints),
+			"actual_max_delta_rad", actualMaxDelta,
+			"expected_max_delta_rad", maxDelta,
 		)
 	} else {
 		log.Warnw("scenario: trajectory too short to execute", "arm", armName, "waypoints", len(armInputs))
@@ -564,6 +606,16 @@ func keysOfFrameSystemInputs(m referenceframe.FrameSystemInputs) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
 		out = append(out, k)
+	}
+	return out
+}
+
+// inputsToFloats converts a []referenceframe.Input (which is a float64 alias)
+// to a []float64 so zap.Infow can stringify it without panicking.
+func inputsToFloats(inputs []referenceframe.Input) []float64 {
+	out := make([]float64, len(inputs))
+	for i, v := range inputs {
+		out[i] = float64(v)
 	}
 	return out
 }
