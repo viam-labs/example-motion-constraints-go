@@ -51,6 +51,8 @@ var builtinPresets = []string{
 	"duck_under_obstacle",
 	"gripper_with_box",
 	"corridor_passthrough",
+	"random_translation_linear",
+	"random_rotation_linear",
 }
 
 func init() {
@@ -426,6 +428,24 @@ func (s *service) runArmLoop(ctx context.Context, armName, scenarioKey string) {
 	if scn == nil {
 		s.logger.Warnw("runArmLoop: unknown scenario; arm idle", "arm", armName, "key", scenarioKey)
 		return
+	}
+	// One-time home move so scenarios don't start with the arm inside an
+	// obstacle. Failures here are non-fatal — log and continue, the first
+	// scenario plan will either succeed or report its own error.
+	s.mu.Lock()
+	deps := s.deps
+	s.mu.Unlock()
+	if deps != nil {
+		if armRes, ok := deps.arms[armName]; ok {
+			if model, err := armRes.Kinematics(ctx); err == nil && model != nil {
+				home := homeJointPositions(len(model.DoF()))
+				s.logger.Infow("home: moving arm to startup pose",
+					"arm", armName, "home", inputsToFloats(home))
+				if err := armRes.MoveToJointPositions(ctx, home, nil); err != nil {
+					s.logger.Warnw("home: move failed (will run anyway)", "arm", armName, "err", err)
+				}
+			}
+		}
 	}
 	for {
 		if ctx.Err() != nil {

@@ -143,6 +143,22 @@ func (r *resolved) armBase(armName string) spatialmath.Pose {
 	return spatialmath.NewZeroPose()
 }
 
+// homeJointPositions returns a "tucked" joint-space pose used as a one-
+// time startup move so the arm doesn't begin a scenario inside an
+// obstacle. Works across 6/7-DOF arms (ur5e, ur7e, ur20, xarm6, xarm7):
+// joint 1 and joint 3 set to -90deg fold the arm upward, keeping all
+// links well away from the typical (500, 0, 300) obstacle region.
+func homeJointPositions(numDoF int) []referenceframe.Input {
+	h := make([]referenceframe.Input, numDoF)
+	if numDoF >= 2 {
+		h[1] = -1.5708
+	}
+	if numDoF >= 4 {
+		h[3] = -1.5708
+	}
+	return h
+}
+
 // eeFrame returns the frame name the planner should target for an arm —
 // the configured non-default frame (e.g. a gripper) if set, otherwise the
 // arm's own kinematic-output frame (i.e. the arm name itself).

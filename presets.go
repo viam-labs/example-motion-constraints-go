@@ -56,6 +56,12 @@ func presetByKey(key string) *Scenario {
 	case "corridor_passthrough":
 		s := presetCorridorPassthrough()
 		return &s
+	case "random_translation_linear":
+		s := presetRandomTranslationLinear()
+		return &s
+	case "random_rotation_linear":
+		s := presetRandomRotationLinear()
+		return &s
 	default:
 		return nil
 	}
@@ -439,6 +445,101 @@ func presetRandomRotation() Scenario {
 				)
 			}
 			return planSingleArmToPose(ctx, r, fs, armName, goal, obstacles, nil)
+		},
+	}
+}
+
+// ---- random_translation_linear ---------------------------------------------
+
+// presetRandomTranslationLinear visits the same waypoint sequence as
+// random_translation but adds a LinearConstraint so each hop traces a
+// straight cartesian line. Pair with the same EE-frame override to see
+// gripper-vs-wrist trail differences under the constraint.
+func presetRandomTranslationLinear() Scenario {
+	waypoints := []r3.Vector{
+		{X: 500, Y: 250, Z: 400},
+		{X: 350, Y: -250, Z: 550},
+		{X: 600, Y: 0, Z: 300},
+		{X: 400, Y: 200, Z: 500},
+		{X: 500, Y: -200, Z: 350},
+		{X: 450, Y: 100, Z: 450},
+		{X: 550, Y: -100, Z: 500},
+	}
+	constraints := &motionplan.Constraints{
+		LinearConstraint: []motionplan.LinearConstraint{
+			{LineToleranceMm: 100, OrientationToleranceDegs: 90},
+		},
+	}
+	var counter int64
+
+	return Scenario{
+		Key:         "random_translation_linear",
+		Description: "Same as random_translation but each hop is forced to a straight cartesian line.",
+		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
+			return nil, nil
+		},
+		Plan: func(
+			ctx context.Context,
+			r *resolved,
+			fs *referenceframe.FrameSystem,
+			armName string,
+			obstacles []scenarioObstacle,
+		) (motionplan.Plan, error) {
+			idx := int(atomic.AddInt64(&counter, 1)-1) % len(waypoints)
+			off := waypoints[idx]
+			goal := applyArmOffset(r.armBase(armName), off)
+			return planSingleArmToPose(ctx, r, fs, armName, goal, obstacles, constraints)
+		},
+	}
+}
+
+// ---- random_rotation_linear ------------------------------------------------
+
+// presetRandomRotationLinear holds a fixed arm-local position and cycles
+// orientations like random_rotation, but adds a LinearConstraint so the
+// EE position is constrained to a (degenerate, zero-length) straight
+// line between identical positions. Practically: the position cannot
+// drift while orientation changes, which is a meaningful demonstration
+// on grippered arms where the wrist must trace a circle to keep the
+// tool tip planted.
+func presetRandomRotationLinear() Scenario {
+	const (
+		posX, posY, posZ = 500.0, 0.0, 400.0
+	)
+	orientations := []*spatialmath.OrientationVectorDegrees{
+		{OX: 0, OY: 0, OZ: -1, Theta: 0},
+		{OX: 0.3, OY: 0, OZ: -0.95, Theta: 0},
+		{OX: 0, OY: 0.3, OZ: -0.95, Theta: 0},
+		{OX: -0.3, OY: 0, OZ: -0.95, Theta: 0},
+		{OX: 0, OY: -0.3, OZ: -0.95, Theta: 0},
+		{OX: 0, OY: 0, OZ: -1, Theta: 45},
+		{OX: 0, OY: 0, OZ: -1, Theta: -45},
+	}
+	constraints := &motionplan.Constraints{
+		LinearConstraint: []motionplan.LinearConstraint{
+			{LineToleranceMm: 100, OrientationToleranceDegs: 180},
+		},
+	}
+	var counter int64
+
+	return Scenario{
+		Key:         "random_rotation_linear",
+		Description: "Same as random_rotation but the EE position is held under a LinearConstraint while orientation changes.",
+		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
+			return nil, nil
+		},
+		Plan: func(
+			ctx context.Context,
+			r *resolved,
+			fs *referenceframe.FrameSystem,
+			armName string,
+			obstacles []scenarioObstacle,
+		) (motionplan.Plan, error) {
+			idx := int(atomic.AddInt64(&counter, 1)-1) % len(orientations)
+			ov := orientations[idx]
+			pos := applyArmOffset(r.armBase(armName), r3.Vector{X: posX, Y: posY, Z: posZ}).Point()
+			goal := spatialmath.NewPose(pos, ov)
+			return planSingleArmToPose(ctx, r, fs, armName, goal, obstacles, constraints)
 		},
 	}
 }

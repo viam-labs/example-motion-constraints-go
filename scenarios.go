@@ -192,7 +192,10 @@ func (s *service) runScenario(ctx context.Context, scn Scenario, armName string)
 			log.Infow("scenario: path last", "frame", last.Parent(), "xyz", []float64{p.X, p.Y, p.Z})
 		}
 	}
-	previewUUIDs := s.emitDenseTrajectoryGhosts(armName, traj, fs, density)
+	// Preview at the configured EE frame so gripper-equipped arms show
+	// the trail at the tool tip instead of the wrist.
+	previewFrame := r.eeFrame(armName)
+	previewUUIDs := s.emitDenseTrajectoryGhosts(armName, previewFrame, traj, fs, density)
 	log.Infow("scenario: ghost trail emitted", "count", len(previewUUIDs), "density", density)
 	// Defer ghost-trail cleanup so EVERY exit path (success, collision-
 	// abort, execute error) tears down its trail. Without this, an
@@ -340,10 +343,14 @@ func (s *service) runScenario(ctx context.Context, scn Scenario, armName string)
 // Returns the UUIDs of every emitted ghost so the caller can clear them.
 func (s *service) emitDenseTrajectoryGhosts(
 	armName string,
+	previewFrame string,
 	traj motionplan.Trajectory,
 	fs *referenceframe.FrameSystem,
 	density int,
 ) [][]byte {
+	if previewFrame == "" {
+		previewFrame = armName
+	}
 	if density < 1 {
 		density = 1
 	}
@@ -366,7 +373,7 @@ func (s *service) emitDenseTrajectoryGhosts(
 	}
 	samples := make([]sample, 0, len(traj)*density+1)
 	addSample := func(inputs referenceframe.FrameSystemInputs) {
-		pose, err := eePoseFromInputs(fs, inputs, armName)
+		pose, err := eePoseFromInputs(fs, inputs, previewFrame)
 		if err != nil || pose == nil {
 			return
 		}
