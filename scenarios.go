@@ -257,29 +257,59 @@ func (s *service) emitDenseTrajectoryGhosts(
 	radius := 8.0
 	color := ColorTrajectory
 	opacity := opacityPtr(0.4)
-	counter := 0
-	emit := func(inputs referenceframe.FrameSystemInputs) {
+
+	// Collect every sampled pose first so we can mark a few as "reference
+	// frames" (axes triads) — start, end, and a small number of evenly-
+	// spaced intermediates if the trail is long enough to warrant them.
+	type sample struct {
+		inputs referenceframe.FrameSystemInputs
+		pose   spatialmath.Pose
+	}
+	samples := make([]sample, 0, len(traj)*density+1)
+	addSample := func(inputs referenceframe.FrameSystemInputs) {
 		pose, err := eePoseFromInputs(fs, inputs, armName)
 		if err != nil || pose == nil {
 			return
 		}
-		uuid := []byte(fmt.Sprintf("traj:%s:%d:%d", armName, ts, counter))
-		label := fmt.Sprintf("traj_%s_%d", armName, counter)
-		if err := s.emitADDED(uuid, pose, sphereGeometry(radius, label), &color, opacity); err != nil {
-			return
-		}
-		out = append(out, uuid)
-		counter++
+		samples = append(samples, sample{inputs: inputs, pose: pose})
 	}
-
-	// First waypoint (start configuration).
-	emit(traj[0])
+	addSample(traj[0])
 	for i := 1; i < len(traj); i++ {
 		prev := traj[i-1]
 		curr := traj[i]
 		for k := 1; k <= density; k++ {
 			t := float64(k) / float64(density)
-			emit(lerpInputs(prev, curr, t))
+			addSample(lerpInputs(prev, curr, t))
+		}
+	}
+	if len(samples) == 0 {
+		return nil
+	}
+
+	// Reference-frame markers (axes triads): always the first and last
+	// sample, plus 0-3 intermediates depending on how long the trail is.
+	axesIdx := map[int]struct{}{0: {}, len(samples) - 1: {}}
+	if len(samples) >= 30 {
+		// Three intermediates at quartiles.
+		for _, frac := range []float64{0.25, 0.5, 0.75} {
+			axesIdx[int(float64(len(samples)-1)*frac)] = struct{}{}
+		}
+	} else if len(samples) >= 15 {
+		// One intermediate at the midpoint.
+		axesIdx[(len(samples)-1)/2] = struct{}{}
+	}
+
+	for i, sm := range samples {
+		uuid := []byte(fmt.Sprintf("traj:%s:%d:%d", armName, ts, i))
+		label := fmt.Sprintf("traj_%s_%d", armName, i)
+		if err := s.emitADDED(uuid, sm.pose, sphereGeometry(radius, label), &color, opacity); err == nil {
+			out = append(out, uuid)
+		}
+		if _, ok := axesIdx[i]; ok {
+			axesUUID := []byte(fmt.Sprintf("traj_axes:%s:%d:%d", armName, ts, i))
+			if err := s.emitAxesMarker(axesUUID, sm.pose); err == nil {
+				out = append(out, axesUUID)
+			}
 		}
 	}
 	return out

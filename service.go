@@ -445,6 +445,45 @@ func (s *service) emitADDED(
 	return nil
 }
 
+// emitAxesMarker publishes a "reference frame" entity at the given pose —
+// the renderer draws a 3-axis triad (red X, green Y, blue Z) using the
+// metadata.show_axes_helper flag. The accompanying geometry is invisible
+// since the triad is the interesting part. UUIDs should be unique per
+// emission (the caller's ts:i scheme handles that).
+func (s *service) emitAxesMarker(uuid []byte, pose spatialmath.Pose) error {
+	if pose == nil {
+		pose = spatialmath.NewZeroPose()
+	}
+	// A tiny invisible sphere keeps the geometry slot populated; the
+	// renderer reads pose from the Transform and the axes triad from
+	// metadata.show_axes_helper.
+	geom := sphereGeometry(1.0, stringFromBytes(uuid))
+	tf := &commonpb.Transform{
+		Uuid:           uuid,
+		ReferenceFrame: stringFromBytes(uuid),
+		PoseInObserverFrame: &commonpb.PoseInFrame{
+			ReferenceFrame: "world",
+			Pose:           poseToPB(pose),
+		},
+		PhysicalObject: geom,
+		Metadata: buildMetadata(metadataOpts{
+			Invisible:      true,
+			ShowAxesHelper: true,
+		}),
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, exists := s.scene[string(uuid)]; exists {
+		return nil
+	}
+	s.scene[string(uuid)] = tf
+	s.broadcastLocked(worldstatestore.TransformChange{
+		ChangeType: pb.TransformChangeType_TRANSFORM_CHANGE_TYPE_ADDED,
+		Transform:  tf,
+	})
+	return nil
+}
+
 // emitColorUpdate replaces an existing entity's color (and opacity) without
 // rotating the UUID. Emits an UPDATED change with a field-mask covering the
 // affected metadata keys so the renderer should pick up the recolor in
