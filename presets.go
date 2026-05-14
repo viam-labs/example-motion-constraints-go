@@ -344,9 +344,19 @@ func presetObstacleProgression() Scenario {
 // ---- shared helpers --------------------------------------------------------
 
 // alternateBetweenAnchors returns a Plan hook that swings the designated
-// arm between two anchor offsets (in the arm's local frame). The hook
+// arm between two anchor offsets (relative to the arm's mount). The hook
 // chooses whichever anchor is farther from the arm's current EE pose so
-// the motion looks like a continuous swing.
+// the motion looks like a continuous back-and-forth swing.
+//
+// Coordinate-frame note: `arm.EndPosition()` returns the EE in the arm's
+// LOCAL mount frame (small numbers near the workspace). Anchor OFFSETS
+// are also in that same local frame. We compare local-to-local, then
+// transform the chosen offset to world coords before handing the goal
+// to the planner.
+//
+// An earlier version of this helper compared local-frame EE against
+// world-frame anchor poses, which made every per-arm scenario stuck on
+// the same anchor forever (max_joint_delta_rad: 0 in every cycle).
 func alternateBetweenAnchors(
 	scenarioKey string,
 	anchorAOffset, anchorBOffset r3.Vector,
@@ -363,22 +373,28 @@ func alternateBetweenAnchors(
 		if !ok {
 			return nil, fmt.Errorf("%s: arm %q is not configured", scenarioKey, armName)
 		}
-		base := r.armBase(armName)
-		anchorA := applyArmOffset(base, anchorAOffset)
-		anchorB := applyArmOffset(base, anchorBOffset)
-		goal := anchorA
+		goalOffset := anchorAOffset
 		if armRes != nil {
 			if ee, err := armRes.EndPosition(ctx, nil); err == nil && ee != nil {
+				// EE is in arm-local coords; anchors are too.
 				eePt := ee.Point()
-				aPt := anchorA.Point()
-				bPt := anchorB.Point()
-				dA := dist3(eePt.X-aPt.X, eePt.Y-aPt.Y, eePt.Z-aPt.Z)
-				dB := dist3(eePt.X-bPt.X, eePt.Y-bPt.Y, eePt.Z-bPt.Z)
+				dA := dist3(eePt.X-anchorAOffset.X, eePt.Y-anchorAOffset.Y, eePt.Z-anchorAOffset.Z)
+				dB := dist3(eePt.X-anchorBOffset.X, eePt.Y-anchorBOffset.Y, eePt.Z-anchorBOffset.Z)
 				if dA < dB {
-					goal = anchorB
+					goalOffset = anchorBOffset
+				}
+				if r.logger != nil {
+					r.logger.Infow("alternate: anchor choice",
+						"arm", armName,
+						"ee_local", []float64{eePt.X, eePt.Y, eePt.Z},
+						"dist_to_A_sq", dA,
+						"dist_to_B_sq", dB,
+						"picked", map[bool]string{true: "B", false: "A"}[dA < dB],
+					)
 				}
 			}
 		}
+		goal := applyArmOffset(r.armBase(armName), goalOffset)
 		plan, err := planSingleArmToPose(ctx, r, fs, armName, goal, obstacles, constraints)
 		if err != nil {
 			return nil, err
