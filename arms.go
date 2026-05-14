@@ -158,16 +158,29 @@ func homeJointPositionsCandle(numDoF int) []referenceframe.Input {
 	return h
 }
 
-// homeJointPositionsZero returns all-zeros joints — the simulated arm's
-// fresh-load default config. Used for scenarios without obstacles
-// where the arm needs a predictable starting pose so the planner can
-// find continuous IK solutions across the workspace targets. Crucial
-// for reset after a module reload: simulated-arm joint state persists
-// across module reloads in viam-server, so without an explicit reset
-// arms can be stuck in whatever pose the previous module session left
-// them in.
-func homeJointPositionsZero(numDoF int) []referenceframe.Input {
-	return make([]referenceframe.Input, numDoF)
+// homeJointPositionsReady returns a forward-pointing "ready" pose:
+// j1 = -90deg (shoulder up), j2 = +90deg (elbow flex), j3 = -90deg
+// (wrist flex). Puts the EE roughly out front of the arm at a mid-
+// height position — inside the typical workspace targets — so cbirrt
+// has continuous IK solutions across plans to (500, 0, 400)-style
+// anchors.
+//
+// Used for non-obstacle scenarios where the previous "all zeros"
+// default made the EE land 800mm BEHIND the arm at zero-config, and
+// any linear-constrained plan to a forward goal had to trace a line
+// passing through joint singularities near the base.
+func homeJointPositionsReady(numDoF int) []referenceframe.Input {
+	h := make([]referenceframe.Input, numDoF)
+	if numDoF >= 2 {
+		h[1] = -1.5708
+	}
+	if numDoF >= 3 {
+		h[2] = 1.5708
+	}
+	if numDoF >= 4 {
+		h[3] = -1.5708
+	}
+	return h
 }
 
 // eeFrame returns the frame name the planner should target for an arm —

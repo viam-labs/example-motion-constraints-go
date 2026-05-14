@@ -538,8 +538,8 @@ func (s *service) runArmLoop(ctx context.Context, armName, scenarioKey string) {
 					home = homeJointPositionsCandle(len(model.DoF()))
 					poseKind = "candle"
 				} else {
-					home = homeJointPositionsZero(len(model.DoF()))
-					poseKind = "zero"
+					home = homeJointPositionsReady(len(model.DoF()))
+					poseKind = "ready"
 				}
 				s.logger.Infow("home: moving arm to startup pose",
 					"arm", armName, "scenario", scenarioKey,
