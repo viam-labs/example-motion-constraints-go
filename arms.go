@@ -99,19 +99,27 @@ func (r *resolved) populateArmBases(ctx context.Context) {
 		return
 	}
 	for _, name := range r.armOrder {
-		pif, err := r.frameSystem.GetPose(ctx, name, referenceframe.World, nil, nil)
+		// IMPORTANT: framesystem.GetPose(<armName>, "world") returns the
+		// arm's END-EFFECTOR pose at zero config, not the mount pose —
+		// the kinematic chain's primary output frame is named after the
+		// component itself. The static offset frame that captures the
+		// arm's mount in world is named <armName>_origin.
+		originFrame := name + "_origin"
+		pif, err := r.frameSystem.GetPose(ctx, originFrame, referenceframe.World, nil, nil)
 		if err != nil || pif == nil {
 			r.armBases[name] = spatialmath.NewZeroPose()
 			if r.logger != nil {
-				r.logger.Warnw("populateArmBases: GetPose failed, using zero", "arm", name, "err", err)
+				r.logger.Warnw("populateArmBases: GetPose failed, using zero",
+					"arm", name, "origin_frame", originFrame, "err", err)
 			}
 			continue
 		}
 		r.armBases[name] = pif.Pose()
 		if r.logger != nil {
 			pt := pif.Pose().Point()
-			r.logger.Infow("populateArmBases: arm base in world",
+			r.logger.Infow("populateArmBases: arm mount in world",
 				"arm", name,
+				"origin_frame", originFrame,
 				"xyz", []float64{pt.X, pt.Y, pt.Z},
 			)
 		}
