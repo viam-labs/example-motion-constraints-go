@@ -143,12 +143,11 @@ func (r *resolved) armBase(armName string) spatialmath.Pose {
 	return spatialmath.NewZeroPose()
 }
 
-// homeJointPositions returns a "tucked" joint-space pose used as a one-
-// time startup move so the arm doesn't begin a scenario inside an
-// obstacle. Works across 6/7-DOF arms (ur5e, ur7e, ur20, xarm6, xarm7):
-// joint 1 and joint 3 set to -90deg fold the arm upward, keeping all
-// links well away from the typical (500, 0, 300) obstacle region.
-func homeJointPositions(numDoF int) []referenceframe.Input {
+// homeJointPositionsCandle returns a "tucked" joint-space pose:
+// j1 = j3 = -90deg folds 6/7-DOF arms upward, keeping all links well
+// away from the typical (500, 0, 300) obstacle region. Used for
+// scenarios that put boxes near zero-config workspace.
+func homeJointPositionsCandle(numDoF int) []referenceframe.Input {
 	h := make([]referenceframe.Input, numDoF)
 	if numDoF >= 2 {
 		h[1] = -1.5708
@@ -157,6 +156,18 @@ func homeJointPositions(numDoF int) []referenceframe.Input {
 		h[3] = -1.5708
 	}
 	return h
+}
+
+// homeJointPositionsZero returns all-zeros joints — the simulated arm's
+// fresh-load default config. Used for scenarios without obstacles
+// where the arm needs a predictable starting pose so the planner can
+// find continuous IK solutions across the workspace targets. Crucial
+// for reset after a module reload: simulated-arm joint state persists
+// across module reloads in viam-server, so without an explicit reset
+// arms can be stuck in whatever pose the previous module session left
+// them in.
+func homeJointPositionsZero(numDoF int) []referenceframe.Input {
+	return make([]referenceframe.Input, numDoF)
 }
 
 // eeFrame returns the frame name the planner should target for an arm —

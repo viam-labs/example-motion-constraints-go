@@ -21,6 +21,7 @@ import (
 	commonpb "go.viam.com/api/common/v1"
 	pb "go.viam.com/api/service/worldstatestore/v1"
 	"go.viam.com/rdk/logging"
+	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/services/worldstatestore"
 	"go.viam.com/rdk/spatialmath"
@@ -516,27 +517,35 @@ func (s *service) runArmLoop(ctx context.Context, armName, scenarioKey string) {
 		s.logger.Warnw("runArmLoop: unknown scenario; arm idle", "arm", armName, "key", scenarioKey)
 		return
 	}
-	// Conditional one-time home move. The home (j1, j3 = -90deg) is a
-	// safe tucked pose useful when a scenario's obstacles would overlap
-	// the arm's zero-config — currently only the row-B/C scenarios with
-	// boxes near the workspace. For row-A and row-AB scenarios (no
-	// obstacles, sometimes constraint-only), the home pose makes the
-	// first cycle's linear-constrained plan UNREACHABLE from the "candle"
-	// pose, leaving the arm stuck pointing straight up. Skip home for
-	// those.
-	if scenarioNeedsHome(scenarioKey) {
-		s.mu.Lock()
-		deps := s.deps
-		s.mu.Unlock()
-		if deps != nil {
-			if armRes, ok := deps.arms[armName]; ok {
-				if model, err := armRes.Kinematics(ctx); err == nil && model != nil {
-					home := homeJointPositions(len(model.DoF()))
-					s.logger.Infow("home: moving arm to startup pose",
-						"arm", armName, "scenario", scenarioKey, "home", inputsToFloats(home))
-					if err := armRes.MoveToJointPositions(ctx, home, nil); err != nil {
-						s.logger.Warnw("home: move failed (will run anyway)", "arm", armName, "err", err)
-					}
+	// One-time startup home so the arm has a known starting pose
+	// regardless of what state it carried over from a previous module
+	// session (simulated-arm joint state persists across module
+	// reloads in viam-server). The pose chosen depends on the scenario:
+	//   - obstacle scenarios: candle pose (j1, j3 = -90deg) folds the
+	//     arm up out of the typical obstacle region.
+	//   - non-obstacle scenarios: all-zeros, the fresh-load default,
+	//     so plans start from the arm's natural zero-config orientation
+	//     that IK has continuous solutions around.
+	s.mu.Lock()
+	deps := s.deps
+	s.mu.Unlock()
+	if deps != nil {
+		if armRes, ok := deps.arms[armName]; ok {
+			if model, err := armRes.Kinematics(ctx); err == nil && model != nil {
+				var home []referenceframe.Input
+				var poseKind string
+				if scenarioNeedsHome(scenarioKey) {
+					home = homeJointPositionsCandle(len(model.DoF()))
+					poseKind = "candle"
+				} else {
+					home = homeJointPositionsZero(len(model.DoF()))
+					poseKind = "zero"
+				}
+				s.logger.Infow("home: moving arm to startup pose",
+					"arm", armName, "scenario", scenarioKey,
+					"pose_kind", poseKind, "home", inputsToFloats(home))
+				if err := armRes.MoveToJointPositions(ctx, home, nil); err != nil {
+					s.logger.Warnw("home: move failed (will run anyway)", "arm", armName, "err", err)
 				}
 			}
 		}
