@@ -404,18 +404,23 @@ func presetRandomRotation() Scenario {
 	const (
 		posX, posY, posZ = 500.0, 0.0, 400.0
 	)
-	// Orientation vector + theta tuples (degrees). Picked to cover a
-	// reasonable range of wrist twists / nutations without flipping
-	// through joint-space singularities every cycle.
+	// Orientation goals as Theta twists around the default tool axis
+	// (OZ = +1, the identity direction). Picking variants of identity
+	// keeps the arm's wrist near its natural workspace posture for
+	// forward goals — earlier "point straight down" goals (OZ = -1)
+	// required ur5e to do a full wrist flip from zero-config, which
+	// the IK solver couldn't find a continuous solution for and the
+	// arm got stuck. Twists around the tool axis are kinematically
+	// easy for the planner and visibly different cycle-to-cycle.
 	orientations := []*spatialmath.OrientationVectorDegrees{
-		{OX: 0, OY: 0, OZ: -1, Theta: 0},     // straight down
-		{OX: 0.3, OY: 0, OZ: -0.95, Theta: 0}, // tipped +X
-		{OX: 0, OY: 0.3, OZ: -0.95, Theta: 0}, // tipped +Y
-		{OX: -0.3, OY: 0, OZ: -0.95, Theta: 0},
-		{OX: 0, OY: -0.3, OZ: -0.95, Theta: 0},
-		{OX: 0, OY: 0, OZ: -1, Theta: 45},     // twisted
-		{OX: 0, OY: 0, OZ: -1, Theta: -45},
-		{OX: 0, OY: 0, OZ: -1, Theta: 90},
+		{OX: 0, OY: 0, OZ: 1, Theta: 0},
+		{OX: 0, OY: 0, OZ: 1, Theta: 45},
+		{OX: 0, OY: 0, OZ: 1, Theta: 90},
+		{OX: 0, OY: 0, OZ: 1, Theta: 135},
+		{OX: 0, OY: 0, OZ: 1, Theta: 180},
+		{OX: 0, OY: 0, OZ: 1, Theta: -135},
+		{OX: 0, OY: 0, OZ: 1, Theta: -90},
+		{OX: 0, OY: 0, OZ: 1, Theta: -45},
 	}
 	var counter int64
 
@@ -506,14 +511,16 @@ func presetRandomRotationLinear() Scenario {
 	const (
 		posX, posY, posZ = 500.0, 0.0, 400.0
 	)
+	// Twists around the default tool axis only — same reasoning as
+	// random_rotation: avoids the ur5e wrist-flip IK pathology that
+	// stuck row-AB arms in their startup pose.
 	orientations := []*spatialmath.OrientationVectorDegrees{
-		{OX: 0, OY: 0, OZ: -1, Theta: 0},
-		{OX: 0.3, OY: 0, OZ: -0.95, Theta: 0},
-		{OX: 0, OY: 0.3, OZ: -0.95, Theta: 0},
-		{OX: -0.3, OY: 0, OZ: -0.95, Theta: 0},
-		{OX: 0, OY: -0.3, OZ: -0.95, Theta: 0},
-		{OX: 0, OY: 0, OZ: -1, Theta: 45},
-		{OX: 0, OY: 0, OZ: -1, Theta: -45},
+		{OX: 0, OY: 0, OZ: 1, Theta: 0},
+		{OX: 0, OY: 0, OZ: 1, Theta: 60},
+		{OX: 0, OY: 0, OZ: 1, Theta: 120},
+		{OX: 0, OY: 0, OZ: 1, Theta: 180},
+		{OX: 0, OY: 0, OZ: 1, Theta: -120},
+		{OX: 0, OY: 0, OZ: 1, Theta: -60},
 	}
 	// LinearConstraint here is degenerate (start == end position) and a
 	// tight tolerance makes the cbirrt planner thrash on the orientation
