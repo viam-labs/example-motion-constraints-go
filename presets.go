@@ -77,13 +77,15 @@ func dist3(dx, dy, dz float64) float64 {
 // presetSingleArmObstacle is the simplest motion-planning demo: one arm
 // swings between two anchor poses on either side of a static box obstacle.
 func presetSingleArmObstacle() Scenario {
-	// Relative-to-arm coordinates. World pose comes from arm base + offset.
+	// Box is small and centered, anchors are well-clearance from it.
+	// Earlier values (box 300mm wide in Y, anchors at ±300) left only
+	// 150mm to plan around — cbirrt timed out under concurrent load.
 	const (
 		boxOffsetX, boxOffsetY, boxOffsetZ = 400.0, 0.0, 350.0
-		boxDX, boxDY, boxDZ                = 150.0, 300.0, 200.0
+		boxDX, boxDY, boxDZ                = 100.0, 150.0, 200.0
 	)
-	anchorAOffset := r3.Vector{X: 500, Y: 300, Z: 400}
-	anchorBOffset := r3.Vector{X: 500, Y: -300, Z: 400}
+	anchorAOffset := r3.Vector{X: 500, Y: 400, Z: 400}
+	anchorBOffset := r3.Vector{X: 500, Y: -400, Z: 400}
 
 	return Scenario{
 		Key:         "single_arm_obstacle",
@@ -106,10 +108,10 @@ func presetSingleArmObstacle() Scenario {
 func presetLinearConstraint() Scenario {
 	const (
 		boxX, boxY, boxZ    = 400.0, 0.0, 250.0
-		boxDX, boxDY, boxDZ = 100.0, 100.0, 100.0
+		boxDX, boxDY, boxDZ = 80.0, 80.0, 80.0
 	)
-	anchorA := r3.Vector{X: 500, Y: 250, Z: 400}
-	anchorB := r3.Vector{X: 500, Y: -250, Z: 400}
+	anchorA := r3.Vector{X: 500, Y: 350, Z: 400}
+	anchorB := r3.Vector{X: 500, Y: -350, Z: 400}
 
 	// Tolerances picked loose enough for the default cbirrt planner to
 	// solve within the 8s plan budget on a clean ur5e workspace. Tighten
@@ -142,10 +144,10 @@ func presetLinearConstraint() Scenario {
 func presetOrientationConstraint() Scenario {
 	const (
 		boxX, boxY, boxZ    = 400.0, 0.0, 350.0
-		boxDX, boxDY, boxDZ = 100.0, 200.0, 100.0
+		boxDX, boxDY, boxDZ = 100.0, 100.0, 100.0
 	)
-	anchorA := r3.Vector{X: 500, Y: 300, Z: 400}
-	anchorB := r3.Vector{X: 500, Y: -300, Z: 400}
+	anchorA := r3.Vector{X: 500, Y: 400, Z: 400}
+	anchorB := r3.Vector{X: 500, Y: -400, Z: 400}
 
 	// 45deg is loose enough for the default planner to find solutions
 	// within budget while still meaningfully constraining the path. Drop
@@ -174,10 +176,16 @@ func presetOrientationConstraint() Scenario {
 // ---- dynamic_obstacle ------------------------------------------------------
 
 func presetDynamicObstacle() Scenario {
-	anchorA := r3.Vector{X: 500, Y: 300, Z: 400}
-	anchorB := r3.Vector{X: 500, Y: -300, Z: 400}
-	animAOffset := r3.Vector{X: 400, Y: 200, Z: 350}
-	animBOffset := r3.Vector{X: 400, Y: -200, Z: 350}
+	// Anchors moved out so the planner has clearance; animation now
+	// oscillates the obstacle in the X axis between "near the arm" and
+	// "out front" — keeps the box well clear of the anchor poses at
+	// (500, ±400, 400) at all times. Earlier Y-axis animation drifted
+	// the box to within 150mm of the goal, making every IK solution at
+	// the goal collide with it.
+	anchorA := r3.Vector{X: 500, Y: 400, Z: 400}
+	anchorB := r3.Vector{X: 500, Y: -400, Z: 400}
+	animAOffset := r3.Vector{X: 350, Y: 0, Z: 300}
+	animBOffset := r3.Vector{X: 550, Y: 0, Z: 300}
 
 	return Scenario{
 		Key:         "dynamic_obstacle",

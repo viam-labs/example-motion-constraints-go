@@ -593,13 +593,15 @@ func planSingleArmToPose(
 	}
 	// IMPORTANT: armplanning.PlanMotion does not enforce a timeout of its
 	// own. When constraints + obstacles + goal produce an infeasible
-	// problem the planner can hang indefinitely (observed: constraint-
-	// based scenarios hanging for 170+ seconds across all of process
-	// uptime, blocking the entire per-arm goroutine and preventing the
-	// scenario loop from advancing). A hard ctx deadline kicks the
-	// planner out with context.DeadlineExceeded so the loop can move on
-	// and report failure rather than wedge forever.
-	const planBudget = 8 * time.Second
+	// problem the planner can hang indefinitely. A hard ctx deadline
+	// kicks it out with DeadlineExceeded so the loop can move on.
+	//
+	// 15s gives cbirrt enough room for constrained scenarios (linear/
+	// orientation) under heavy concurrent load (12 plans in flight); 8s
+	// was too aggressive — constrained scenarios consistently exceeded
+	// it. Most plans still complete in <1s; the budget only matters for
+	// the genuinely hard cases.
+	const planBudget = 15 * time.Second
 	planCtx, cancel := context.WithTimeout(ctx, planBudget)
 	defer cancel()
 	plan, meta, err := armplanning.PlanMotion(planCtx, logger, req)
