@@ -418,6 +418,19 @@ func (s *service) emitDenseTrajectoryGhosts(
 			}
 		}
 	}
+
+	// Goal marker: a larger, gold-tinted sphere at the trajectory's
+	// final pose so the user can clearly see what pose the planner was
+	// aiming at (vs. the start/intermediate trajectory samples, which
+	// are all the same green tint). Lives alongside the ghost trail and
+	// gets cleaned up with it.
+	goalSample := samples[len(samples)-1]
+	goalUUID := []byte(fmt.Sprintf("traj_goal:%s:%d", armName, ts))
+	goalLabel := fmt.Sprintf("goal_%s", armName)
+	goalColor := ColorGoal
+	if err := s.emitADDED(goalUUID, goalSample.pose, sphereGeometry(18, goalLabel), &goalColor, opacityPtr(0.7)); err == nil {
+		out = append(out, goalUUID)
+	}
 	return out
 }
 
