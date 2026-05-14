@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/golang/geo/r3"
 	commonpb "go.viam.com/api/common/v1"
 	pb "go.viam.com/api/service/worldstatestore/v1"
 	"go.viam.com/rdk/logging"
@@ -362,6 +363,13 @@ func (s *service) Reconfigure(
 	go s.runLoop(tickCtx, done)
 	go s.animationLoop(animCtx, animDone)
 
+	// Emit per-arm text labels (small PLY meshes generated offline by
+	// scripts/generate_text_assets.py). Placed in front of each arm at
+	// floor height so the viewer's default camera reads them. Failures
+	// are non-fatal — the demo runs without labels if assets are
+	// missing.
+	s.emitArmLabelMeshes()
+
 	s.logger.Infow("example-motion-constraints-go (re)configured",
 		"name", conf.ResourceName().Name,
 		"arms", s.armNames,
@@ -664,6 +672,56 @@ func (s *service) emitADDED(
 		"subscribers", len(s.subscribers),
 		"scene_count", len(s.scene),
 	)
+	s.broadcastLocked(worldstatestore.TransformChange{
+		ChangeType: pb.TransformChangeType_TRANSFORM_CHANGE_TYPE_ADDED,
+		Transform:  tf,
+	})
+	return nil
+}
+
+// emitLabelMesh publishes an extruded-text PLY mesh at the given pose
+// with the given label string. The PLY asset must already exist on
+// disk (generated offline by scripts/generate_text_assets.py).
+//
+// Items are emitted at world-frame pose; the PLY itself is oriented
+// "upright with front face at +Y" by the generator so the default
+// Viam viewer camera reads them left-to-right.
+func (s *service) emitLabelMesh(uuid []byte, pose spatialmath.Pose, label string, heightMM int) error {
+	plyBytes, err := loadTextPLY(label, heightMM)
+	if err != nil {
+		return err
+	}
+	if pose == nil {
+		pose = spatialmath.NewZeroPose()
+	}
+	geom := &commonpb.Geometry{
+		Label: label,
+		GeometryType: &commonpb.Geometry_Mesh{
+			Mesh: &commonpb.Mesh{
+				ContentType: "ply",
+				Mesh:        plyBytes,
+			},
+		},
+	}
+	tf := &commonpb.Transform{
+		Uuid:           uuid,
+		ReferenceFrame: stringFromBytes(uuid),
+		PoseInObserverFrame: &commonpb.PoseInFrame{
+			ReferenceFrame: "world",
+			Pose:           poseToPB(pose),
+		},
+		PhysicalObject: geom,
+		Metadata: buildMetadata(metadataOpts{
+			Color:   &Color{R: 220, G: 220, B: 220},
+			Opacity: opacityPtr(1.0),
+		}),
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, exists := s.scene[string(uuid)]; exists {
+		return nil
+	}
+	s.scene[string(uuid)] = tf
 	s.broadcastLocked(worldstatestore.TransformChange{
 		ChangeType: pb.TransformChangeType_TRANSFORM_CHANGE_TYPE_ADDED,
 		Transform:  tf,
@@ -1008,6 +1066,52 @@ func scenarioNeedsHome(scenarioKey string) bool {
 		return true
 	}
 	return false
+}
+
+// emitArmLabelMeshes places a pre-generated text PLY mesh in front of
+// each arm in the active bundle, with a brief description of its
+// scenario. UUIDs are stable per arm so the labels survive subsequent
+// reconfigures unless the bundle changes the arm's scenario or gripper.
+//
+// Layout: 600mm forward of the arm in world -Y (toward the default
+// camera viewer) at floor level. The PLYs are oriented "upright, front
+// face at +Y" by the generator, so they read left-to-right when viewed
+// from the default camera angle.
+func (s *service) emitArmLabelMeshes() {
+	s.mu.Lock()
+	deps := s.deps
+	scenarios := s.armScenarios
+	s.mu.Unlock()
+	if deps == nil || len(scenarios) == 0 {
+		return
+	}
+	const (
+		labelHeightMM = 25
+		labelForwardY = -600.0 // distance in front of the arm (-Y from base)
+		labelZ        = 50.0   // floor-level height
+	)
+	for armName, scenarioKey := range scenarios {
+		base := deps.armBase(armName)
+		if base == nil {
+			continue
+		}
+		hasGripper := false
+		if eeFrame, ok := deps.eeFrames[armName]; ok && eeFrame != "" && eeFrame != armName {
+			hasGripper = true
+		}
+		label := labelTextForArm(scenarioKey, hasGripper)
+		bp := base.Point()
+		pose := spatialmath.NewPoseFromPoint(r3.Vector{
+			X: bp.X,
+			Y: bp.Y + labelForwardY,
+			Z: labelZ,
+		})
+		uuid := []byte("label:" + armName)
+		if err := s.emitLabelMesh(uuid, pose, label, labelHeightMM); err != nil {
+			s.logger.Warnw("emitArmLabelMeshes: skipping arm",
+				"arm", armName, "label", label, "err", err)
+		}
+	}
 }
 
 // filterBundleToConfiguredArms returns a copy of the bundle containing
