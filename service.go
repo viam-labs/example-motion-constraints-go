@@ -45,6 +45,8 @@ var builtinPresets = []string{
 	"dynamic_obstacle",
 	"multi_arm_choreography",
 	"obstacle_progression",
+	"random_translation",
+	"random_rotation",
 }
 
 func init() {

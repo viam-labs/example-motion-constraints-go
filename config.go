@@ -32,6 +32,12 @@ type Config struct {
 	// ArmScenarios wins and Presets is ignored.
 	ArmScenarios map[string]string `json:"arm_scenarios,omitempty"`
 
+	// EEFrames maps an arm name to a non-default end-effector frame to
+	// plan against (e.g. a gripper tip attached as a child frame in the
+	// machine config). When unset for an arm, the planner targets the
+	// arm's own kinematic-chain output frame (i.e. the arm name).
+	EEFrames map[string]string `json:"ee_frames,omitempty"`
+
 	// AbortOnCollision: if a pre-flight collision check trips, skip execution.
 	AbortOnCollision *bool `json:"abort_on_collision,omitempty"`
 

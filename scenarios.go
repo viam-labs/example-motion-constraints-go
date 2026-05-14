@@ -538,6 +538,12 @@ func planSingleArmToPose(
 		}
 		startInputs[name] = make([]referenceframe.Input, len(f.DoF()))
 	}
+	// Plan to the configured EE frame for this arm (a gripper, etc.) so
+	// IK solves for the tool-tip rather than the wrist when an offset
+	// frame is in play. Falls back to armName when no EE frame is
+	// configured.
+	goalFrame := r.eeFrame(armName)
+
 	if log != nil {
 		gp := goal.Point()
 		gov := goal.Orientation().OrientationVectorDegrees()
@@ -552,6 +558,7 @@ func planSingleArmToPose(
 		}
 		log.Infow("plan: built request",
 			"arm", armName,
+			"goal_frame", goalFrame,
 			"goal_world_xyz", []float64{gp.X, gp.Y, gp.Z},
 			"goal_world_ov_deg", []float64{gov.OX, gov.OY, gov.OZ, gov.Theta},
 			"current_ee_world_xyz", currentEEWorld,
@@ -578,7 +585,7 @@ func planSingleArmToPose(
 	}
 
 	goalPoses := referenceframe.FrameSystemPoses{
-		armName: referenceframe.NewPoseInFrame(referenceframe.World, goal),
+		goalFrame: referenceframe.NewPoseInFrame(referenceframe.World, goal),
 	}
 	req := &armplanning.PlanRequest{
 		FrameSystem: fs,

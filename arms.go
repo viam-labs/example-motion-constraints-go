@@ -27,6 +27,7 @@ type resolved struct {
 	arms        map[string]arm.Arm
 	armOrder    []string // preserve config order for grid scenarios
 	armBases    map[string]spatialmath.Pose
+	eeFrames    map[string]string // arm -> non-default EE frame (e.g. gripper)
 	motion      motion.Service
 	frameSystem framesystem.Service
 	logger      logging.Logger
@@ -40,7 +41,11 @@ func resolveDeps(deps resource.Dependencies, cfg *Config, logger logging.Logger)
 	out := &resolved{
 		arms:     map[string]arm.Arm{},
 		armBases: map[string]spatialmath.Pose{},
+		eeFrames: map[string]string{},
 		logger:   logger,
+	}
+	for k, v := range cfg.EEFrames {
+		out.eeFrames[k] = v
 	}
 	for _, name := range cfg.Arms {
 		dep, err := findDepByShortName(deps, name)
@@ -136,6 +141,19 @@ func (r *resolved) armBase(armName string) spatialmath.Pose {
 		return p
 	}
 	return spatialmath.NewZeroPose()
+}
+
+// eeFrame returns the frame name the planner should target for an arm —
+// the configured non-default frame (e.g. a gripper) if set, otherwise the
+// arm's own kinematic-output frame (i.e. the arm name itself).
+func (r *resolved) eeFrame(armName string) string {
+	if r == nil || r.eeFrames == nil {
+		return armName
+	}
+	if name, ok := r.eeFrames[armName]; ok && name != "" {
+		return name
+	}
+	return armName
 }
 
 // findDepByShortName tolerates configs that list arms by short name (e.g.

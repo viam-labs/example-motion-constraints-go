@@ -91,6 +91,8 @@ func TestBuiltinPresetsCatalog(t *testing.T) {
 		"dynamic_obstacle":       true,
 		"multi_arm_choreography": true,
 		"obstacle_progression":   true,
+		"random_translation":     true,
+		"random_rotation":        true,
 	}
 	if len(builtinPresets) != len(want) {
 		t.Fatalf("preset catalog size drift: got %v", builtinPresets)

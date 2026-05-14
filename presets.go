@@ -38,6 +38,12 @@ func presetByKey(key string) *Scenario {
 	case "obstacle_progression":
 		s := presetObstacleProgression()
 		return &s
+	case "random_translation":
+		s := presetRandomTranslation()
+		return &s
+	case "random_rotation":
+		s := presetRandomRotation()
+		return &s
 	default:
 		return nil
 	}
@@ -316,6 +322,112 @@ func presetObstacleProgression() Scenario {
 			return obstacles, nil
 		},
 		Plan: alternateBetweenAnchors("obstacle_progression", anchorA, anchorB, nil),
+	}
+}
+
+// ---- random_translation ----------------------------------------------------
+
+// presetRandomTranslation visits a deterministic-but-varied sequence of
+// reachable workspace positions, all with a downward-facing default
+// orientation. Combined with a non-default EE frame (a gripper) this
+// demonstrates how the planner solves for the gripper tip rather than
+// the wrist when an offset tool frame is configured.
+func presetRandomTranslation() Scenario {
+	// Sequence of reachable arm-local positions covering a varied chunk
+	// of the workspace. A simple cycle counter advances through them so
+	// the motion is reproducible across runs.
+	waypoints := []r3.Vector{
+		{X: 500, Y: 250, Z: 400},
+		{X: 350, Y: -250, Z: 550},
+		{X: 600, Y: 0, Z: 300},
+		{X: 400, Y: 200, Z: 500},
+		{X: 500, Y: -200, Z: 350},
+		{X: 450, Y: 100, Z: 450},
+		{X: 550, Y: -100, Z: 500},
+	}
+	var counter int64
+
+	return Scenario{
+		Key:         "random_translation",
+		Description: "Arm visits a varied sequence of reachable positions with a fixed downward orientation.",
+		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
+			return nil, nil
+		},
+		Plan: func(
+			ctx context.Context,
+			r *resolved,
+			fs *referenceframe.FrameSystem,
+			armName string,
+			obstacles []scenarioObstacle,
+		) (motionplan.Plan, error) {
+			idx := int(atomic.AddInt64(&counter, 1)-1) % len(waypoints)
+			off := waypoints[idx]
+			goal := applyArmOffset(r.armBase(armName), off)
+			if r.logger != nil {
+				r.logger.Infow("task-space: random_translation goal",
+					"arm", armName,
+					"waypoint_idx", idx,
+					"offset_local", []float64{off.X, off.Y, off.Z},
+				)
+			}
+			return planSingleArmToPose(ctx, r, fs, armName, goal, obstacles, nil)
+		},
+	}
+}
+
+// ---- random_rotation -------------------------------------------------------
+
+// presetRandomRotation holds the EE at a fixed arm-local position and
+// cycles through a sequence of orientations. With a non-default EE frame
+// (an offset gripper) this shows the planner rolling the gripper around
+// a single point while the wrist trace traces a circle around the offset.
+func presetRandomRotation() Scenario {
+	// Fixed arm-local position; orientations cycle through a varied list.
+	const (
+		posX, posY, posZ = 500.0, 0.0, 400.0
+	)
+	// Orientation vector + theta tuples (degrees). Picked to cover a
+	// reasonable range of wrist twists / nutations without flipping
+	// through joint-space singularities every cycle.
+	orientations := []*spatialmath.OrientationVectorDegrees{
+		{OX: 0, OY: 0, OZ: -1, Theta: 0},     // straight down
+		{OX: 0.3, OY: 0, OZ: -0.95, Theta: 0}, // tipped +X
+		{OX: 0, OY: 0.3, OZ: -0.95, Theta: 0}, // tipped +Y
+		{OX: -0.3, OY: 0, OZ: -0.95, Theta: 0},
+		{OX: 0, OY: -0.3, OZ: -0.95, Theta: 0},
+		{OX: 0, OY: 0, OZ: -1, Theta: 45},     // twisted
+		{OX: 0, OY: 0, OZ: -1, Theta: -45},
+		{OX: 0, OY: 0, OZ: -1, Theta: 90},
+	}
+	var counter int64
+
+	return Scenario{
+		Key:         "random_rotation",
+		Description: "Arm holds a fixed position and cycles the EE through varied orientations.",
+		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
+			return nil, nil
+		},
+		Plan: func(
+			ctx context.Context,
+			r *resolved,
+			fs *referenceframe.FrameSystem,
+			armName string,
+			obstacles []scenarioObstacle,
+		) (motionplan.Plan, error) {
+			idx := int(atomic.AddInt64(&counter, 1)-1) % len(orientations)
+			ov := orientations[idx]
+			pos := applyArmOffset(r.armBase(armName), r3.Vector{X: posX, Y: posY, Z: posZ}).Point()
+			goal := spatialmath.NewPose(pos, ov)
+			if r.logger != nil {
+				r.logger.Infow("task-space: random_rotation goal",
+					"arm", armName,
+					"orientation_idx", idx,
+					"world_xyz", []float64{pos.X, pos.Y, pos.Z},
+					"world_ov_deg", []float64{ov.OX, ov.OY, ov.OZ, ov.Theta},
+				)
+			}
+			return planSingleArmToPose(ctx, r, fs, armName, goal, obstacles, nil)
+		},
 	}
 }
 
