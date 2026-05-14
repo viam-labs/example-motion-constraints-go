@@ -193,8 +193,17 @@ func (s *service) runScenario(ctx context.Context, scn Scenario, armName string)
 		}
 	}
 	previewUUIDs := s.emitDenseTrajectoryGhosts(armName, traj, fs, density)
-	addedUUIDs = append(addedUUIDs, previewUUIDs...)
 	log.Infow("scenario: ghost trail emitted", "count", len(previewUUIDs), "density", density)
+	// Defer ghost-trail cleanup so EVERY exit path (success, collision-
+	// abort, execute error) tears down its trail. Without this, an
+	// abort_on_collision=true scenario would leave ~30 sphere+axis
+	// entities in the scene every iteration — observed as a runaway
+	// scene_count (948 entities after ~33 cycles per arm).
+	defer func() {
+		for _, uuid := range previewUUIDs {
+			_ = s.emitREMOVED(uuid)
+		}
+	}()
 	_ = path // path is still useful for diagnostics; ghosts come from traj now
 
 	// Pre-flight collision check: walk the trajectory's arm link geometries
@@ -270,14 +279,8 @@ func (s *service) runScenario(ctx context.Context, scn Scenario, armName string)
 	s.recordStage(armName, "idle")
 	s.recordCycle(armName)
 
-	// Tear down the ghost trail. Obstacles remain on screen so the user
-	// can see the result of the move.
-	for _, uuid := range previewUUIDs {
-		_ = s.emitREMOVED(uuid)
-	}
-	// Remove ghost UUIDs from the returned list (the caller doesn't need
-	// to remove them again).
-	addedUUIDs = addedUUIDs[:len(addedUUIDs)-len(previewUUIDs)]
+	// Ghost trail tear-down is handled by the defer set up at emit time
+	// (covers every exit path: success, collision-abort, execute error).
 	return addedUUIDs, nil
 }
 
@@ -533,9 +536,20 @@ func planSingleArmToPose(
 	if logger == nil {
 		logger = logging.NewLogger("motionconstraints.plan")
 	}
-	plan, meta, err := armplanning.PlanMotion(ctx, logger, req)
+	// IMPORTANT: armplanning.PlanMotion does not enforce a timeout of its
+	// own. When constraints + obstacles + goal produce an infeasible
+	// problem the planner can hang indefinitely (observed: constraint-
+	// based scenarios hanging for 170+ seconds across all of process
+	// uptime, blocking the entire per-arm goroutine and preventing the
+	// scenario loop from advancing). A hard ctx deadline kicks the
+	// planner out with context.DeadlineExceeded so the loop can move on
+	// and report failure rather than wedge forever.
+	const planBudget = 8 * time.Second
+	planCtx, cancel := context.WithTimeout(ctx, planBudget)
+	defer cancel()
+	plan, meta, err := armplanning.PlanMotion(planCtx, logger, req)
 	if err != nil {
-		logger.Errorw("plan: PlanMotion error", "err", err)
+		logger.Errorw("plan: PlanMotion error", "err", err, "budget", planBudget)
 		return nil, err
 	}
 	logger.Infow("plan: PlanMotion ok",
