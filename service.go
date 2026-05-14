@@ -92,10 +92,11 @@ type service struct {
 	// Cached config values.
 	armNames      []string
 	motionService string
-	tickHz          float64
-	intervalS       float64
-	previewS        float64
-	previewDensity  int
+	tickHz             float64
+	intervalS          float64
+	previewS           float64
+	previewDensity     int
+	abortOnCollision   bool
 	loop          bool
 	paused        bool
 	presets       []string
@@ -174,6 +175,11 @@ func (s *service) Reconfigure(
 		s.previewDensity = cfg.PreviewDensity
 	} else {
 		s.previewDensity = DefaultPreviewDensity
+	}
+	if cfg.AbortOnCollision != nil {
+		s.abortOnCollision = *cfg.AbortOnCollision
+	} else {
+		s.abortOnCollision = true
 	}
 	if cfg.Loop != nil {
 		s.loop = *cfg.Loop

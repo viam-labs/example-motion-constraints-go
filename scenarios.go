@@ -76,6 +76,7 @@ func (s *service) runScenario(ctx context.Context, scn Scenario) (addedUUIDs [][
 	r := s.deps
 	previewSec := s.previewS
 	density := s.previewDensity
+	abortOnCollision := s.abortOnCollision
 	s.mu.Unlock()
 	if r == nil {
 		return nil, fmt.Errorf("dependencies not yet resolved")
@@ -164,10 +165,12 @@ func (s *service) runScenario(ctx context.Context, scn Scenario) (addedUUIDs [][
 	if ccErr != nil {
 		log.Warnw("scenario: collision check failed", "err", ccErr)
 	}
-	if len(collidedLabels) > 0 {
+	collisionDetected := len(collidedLabels) > 0
+	if collisionDetected {
 		log.Warnw("scenario: trajectory has collisions",
 			"obstacles", collidedLabels,
 			"first_hit_step", firstHit,
+			"abort_on_collision", abortOnCollision,
 		)
 		for _, label := range collidedLabels {
 			uuid := []byte("obstacle:" + label)
@@ -193,6 +196,13 @@ func (s *service) runScenario(ctx context.Context, scn Scenario) (addedUUIDs [][
 	if err != nil {
 		log.Errorw("scenario: extract inputs failed", "arm", armName, "err", err)
 		return addedUUIDs, fmt.Errorf("extract %q inputs: %w", armName, err)
+	}
+	if collisionDetected && abortOnCollision {
+		log.Warnw("scenario: skipping execute due to collision",
+			"arm", armName,
+			"obstacles", collidedLabels,
+		)
+		return addedUUIDs, nil
 	}
 	log.Infow("scenario: executing", "arm", armName, "waypoints", len(armInputs))
 	if len(armInputs) > 1 {

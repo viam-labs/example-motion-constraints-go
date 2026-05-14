@@ -29,14 +29,27 @@ The service config lives under the service's `attributes` block:
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
-| `motion_service` | string | _required_ | Name of the builtin motion service (`rdk:builtin:builtin`). |
 | `arms` | `[]string` | _required_ | Names of arm components to orchestrate. |
+| `motion_service` | string | _optional_ | Name of a motion service (`rdk:builtin:builtin`). Currently unused — planning goes through `motionplan/armplanning.PlanMotion` directly. Kept for future scenarios that drive arms via `motion.Move`. |
 | `loop` | bool | `true` | If true, scenarios cycle indefinitely; if false, the module idles until DoCommand. |
 | `interval_s` | float | `3.0` | Pause between scenarios in loop mode. |
 | `presets` | `[]string` | `["single_arm_obstacle"]` | Built-in scenario keys to run in order. |
-| `scenarios` | `[]Scenario` | `[]` | Custom scenario definitions (see below). |
-| `abort_on_collision` | bool | `true` | If a pre-flight collision check fails, skip execution. |
+| `preview_density` | int | `15` | Interpolated joint samples per planner waypoint pair when rendering the ghost trajectory. Higher = smoother trail. Set to 1 for keyframes-only. |
+| `abort_on_collision` | bool | `true` | If the trajectory's pre-flight collision check finds a hit, skip the execute step and just leave the trajectory + red-tinted obstacle on screen. |
 | `tick_hz` | float | `30` | Visualization tick rate (capped at 30). |
+
+### Arm-component requirement
+
+Use `rdk:builtin:simulated` (not `rdk:builtin:fake`) and set `"simulate-time": true`. The fake arm teleports through joint positions instantly; the simulated arm animates continuously **but only when `simulate-time: true`** — otherwise its `MoveToJointPositions` blocks forever waiting for a manual `updateForTime` call.
+
+```jsonc
+{
+  "name": "arm0",
+  "api": "rdk:component:arm",
+  "model": "rdk:builtin:simulated",
+  "attributes": { "arm-model": "ur5e", "simulate-time": true }
+}
+```
 
 ## Built-in scenarios
 
