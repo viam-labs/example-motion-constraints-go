@@ -151,13 +151,13 @@ func presetLinearConstraint() Scenario {
 		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
 			return nil, nil
 		},
-		// Goal orientation OZ=+1 (tool +Z aligned with world +Z) is what
-		// ur5e naturally produces at its ready pose — identity orientation
-		// is physically unreachable for the wrist when the EE is an offset
-		// gripper. Using OZ=+1 lets the same scenario work for both
-		// wrist-targeted (no ee_frames override) and gripper-targeted plans.
+		// Match goal orientation to arm's current EE orientation at plan
+		// time — guarantees IK reachability (arm is producing this
+		// orientation right now) and means the LinearConstraint only has
+		// to manage position along the path, not orientation. Works for
+		// both wrist-EE and gripper-EE configs.
 		Plan: alternateBetweenAnchors("linear_constraint", anchorA, anchorB, constraints,
-			&spatialmath.OrientationVectorDegrees{OZ: 1, Theta: 0}),
+			useCurrentEEOrientation),
 	}
 }
 
@@ -183,7 +183,7 @@ func presetOrientationConstraint() Scenario {
 			return nil, nil
 		},
 		Plan: alternateBetweenAnchors("orientation_constraint", anchorA, anchorB, constraints,
-			&spatialmath.OrientationVectorDegrees{OZ: 1, Theta: 0}),
+			useCurrentEEOrientation),
 	}
 }
 
@@ -487,7 +487,7 @@ func presetRandomTranslationLinear() Scenario {
 			return nil, nil
 		},
 		Plan: alternateBetweenAnchors("random_translation_linear", anchorA, anchorB, constraints,
-			&spatialmath.OrientationVectorDegrees{OZ: 1, Theta: 0}),
+			useCurrentEEOrientation),
 	}
 }
 
@@ -701,12 +701,25 @@ func presetCorridorPassthrough() Scenario {
 // world-frame anchor poses, which made every per-arm scenario stuck on
 // the same anchor forever (max_joint_delta_rad: 0 in every cycle).
 // alternateBetweenAnchors returns a Plan closure that toggles between two
-// anchor positions. goalOrient is the orientation specification for the
-// goal pose; pass nil for identity orientation (legacy behavior). For
-// scenarios with offset-gripper EE frames, identity orientation is often
-// physically unreachable for the wrist (ur5e workspace constraint), so
-// pass an OZ=+1 OrientationVectorDegrees to match what the ready pose
-// naturally produces.
+// anchor positions. goalOrient controls the goal pose's orientation:
+//   - nil: identity orientation (legacy behavior, fine for wrist-EE plans
+//     with no constraint — e.g. obstacle scenarios)
+//   - a fixed OrientationVectorDegrees: use this specific orientation
+//   - useCurrentEEOrientation: read armRes.EndPosition's orientation at
+//     plan time and use it. Critical for constrained scenarios with
+//     offset-gripper EE frames: identity orientation is often physically
+//     unreachable for the wrist at the goal position (the IK failure
+//     mode is "zero IK solutions, goal positions appears to be physically
+//     unreachable"), and even when reachable, rotating from a non-identity
+//     start orientation to identity end orientation along a constrained
+//     path is hard for cbirrt. Using current EE orientation means start
+//     and end orientations match — the constrained plan only has to
+//     translate, not rotate, which IK + cbirrt can solve reliably.
+//
+// useCurrentEEOrientation is a sentinel value (not a real orientation);
+// it's compared by identity.
+var useCurrentEEOrientation = &spatialmath.OrientationVectorDegrees{}
+
 func alternateBetweenAnchors(
 	scenarioKey string,
 	anchorAOffset, anchorBOffset r3.Vector,
@@ -755,11 +768,24 @@ func alternateBetweenAnchors(
 			}
 		}
 		var goal spatialmath.Pose
-		if goalOrient != nil {
+		effectiveOrient := goalOrient
+		if effectiveOrient == useCurrentEEOrientation {
+			// Read the arm's current EE orientation. IK is guaranteed to
+			// succeed at that orientation (arm is currently producing it)
+			// and constrained planning is dramatically easier (no
+			// orientation change along the path).
+			if ee, err := armRes.EndPosition(ctx, nil); err == nil && ee != nil {
+				ov := ee.Orientation().OrientationVectorDegrees()
+				effectiveOrient = ov
+			} else {
+				effectiveOrient = nil // fall back to identity
+			}
+		}
+		if effectiveOrient != nil {
 			armBasePt := r.armBase(armName).Point()
 			goal = spatialmath.NewPose(
 				r3.Vector{X: armBasePt.X + goalOffset.X, Y: armBasePt.Y + goalOffset.Y, Z: armBasePt.Z + goalOffset.Z},
-				goalOrient,
+				effectiveOrient,
 			)
 		} else {
 			goal = applyArmOffset(r.armBase(armName), goalOffset)
