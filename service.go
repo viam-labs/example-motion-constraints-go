@@ -180,6 +180,7 @@ type service struct {
 	previewS           float64
 	previewDensity     int
 	abortOnCollision   bool
+	disablePreviewGhosts bool
 	loop          bool
 	paused        bool
 	presets       []string
@@ -301,6 +302,7 @@ func (s *service) Reconfigure(
 	} else {
 		s.abortOnCollision = true
 	}
+	s.disablePreviewGhosts = cfg.DisablePreviewGhosts
 	// (Re)build the plan-concurrency semaphore. We rebuild on every
 	// Reconfigure so a config change in MaxConcurrentPlans takes effect
 	// without a module restart. Any in-flight plans hold slots from the

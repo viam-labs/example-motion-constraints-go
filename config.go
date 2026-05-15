@@ -67,6 +67,15 @@ type Config struct {
 	// "use default" (2). Set higher (e.g. 4) if you have many idle cores
 	// and don't care about viz smoothness.
 	MaxConcurrentPlans int `json:"max_concurrent_plans,omitempty"`
+
+	// DisablePreviewGhosts skips the trajectory-ghost emission entirely.
+	// Diagnostic switch: a linear-constrained plan returns 100+ trajectory
+	// waypoints (cbirrt has to sample densely to verify the constraint),
+	// each of which becomes a TransformChange the 3D viewer's JS main
+	// thread has to process. Setting this to true is the cleanest way to
+	// test whether the trajectory-ghost burst is what makes the viewer
+	// stall. Axes markers (start+end) and the goal marker still emit.
+	DisablePreviewGhosts bool `json:"disable_preview_ghosts,omitempty"`
 }
 
 // Validate is called by the resource graph when the service is (re)configured.

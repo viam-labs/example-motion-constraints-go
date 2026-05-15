@@ -89,6 +89,7 @@ func (s *service) runScenario(ctx context.Context, scn Scenario, armName string)
 	previewSec := s.previewS
 	density := s.previewDensity
 	abortOnCollision := s.abortOnCollision
+	disablePreviewGhosts := s.disablePreviewGhosts
 	s.mu.Unlock()
 	if r == nil {
 		return nil, fmt.Errorf("dependencies not yet resolved")
@@ -212,8 +213,16 @@ func (s *service) runScenario(ctx context.Context, scn Scenario, armName string)
 	// Preview at the configured EE frame so gripper-equipped arms show
 	// the trail at the tool tip instead of the wrist.
 	previewFrame := r.eeFrame(armName)
-	previewUUIDs := s.emitDenseTrajectoryGhosts(armName, previewFrame, traj, fs, density)
-	log.Infow("scenario: ghost trail emitted", "count", len(previewUUIDs), "density", density)
+	var previewUUIDs [][]byte
+	if disablePreviewGhosts {
+		log.Infow("scenario: ghost trail skipped (disable_preview_ghosts=true)",
+			"arm", armName, "traj_steps", len(traj))
+	} else {
+		previewUUIDs = s.emitDenseTrajectoryGhosts(armName, previewFrame, traj, fs, density)
+		log.Infow("scenario: ghost trail emitted",
+			"arm", armName, "count", len(previewUUIDs), "density", density,
+			"traj_steps", len(traj))
+	}
 	// Defer ghost-trail cleanup so EVERY exit path (success, collision-
 	// abort, execute error) tears down its trail. Without this, an
 	// abort_on_collision=true scenario would leave ~30 sphere+axis
