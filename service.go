@@ -59,13 +59,17 @@ var PresetBundles = map[string]map[string]string{
 		"arm_a3": "random_translation",
 		"arm_a4": "random_rotation",
 	},
-	// Same task-space variations as ee_only but each motion is forced
-	// onto a straight cartesian line via LinearConstraint.
+	// Same task-space variations as ee_only with a LinearConstraint
+	// layered on where it actually applies. Rotation slots stay
+	// unconstrained because a "stay on a zero-length cartesian line"
+	// constraint is degenerate — cbirrt either fails IK fast or grinds
+	// against the orientation interpolation until the plan budget
+	// fires, both of which starve the viz.
 	"ee_variations": {
 		"arm_a1": "random_translation_linear",
-		"arm_a2": "random_rotation_linear",
+		"arm_a2": "random_rotation",
 		"arm_a3": "random_translation_linear",
-		"arm_a4": "random_rotation_linear",
+		"arm_a4": "random_rotation",
 	},
 	// Obstacle-geometry pedagogy: arc-over, duck-under, gripper-with-
 	// box, corridor pass-through. gripper_with_box assumes arm_a3 has

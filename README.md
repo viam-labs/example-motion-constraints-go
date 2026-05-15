@@ -76,7 +76,7 @@ Set `preset_set` to one of these to swap the scenario assignment on the same fou
 | Bundle | Description | Scenarios assigned to (a1, a2, a3, a4) |
 | --- | --- | --- |
 | `ee_only` (default) | End-Effector Control Frame Variations | `random_translation`, `random_rotation`, `random_translation` (gripper), `random_rotation` (gripper) |
-| `ee_variations` | EE Variations Under a Linear Constraint | `random_translation_linear`, `random_rotation_linear`, `random_translation_linear` (gripper), `random_rotation_linear` (gripper) |
+| `ee_variations` | EE Variations Under a Linear Constraint | `random_translation_linear`, `random_rotation`, `random_translation_linear` (gripper), `random_rotation` (gripper) |
 | `obstacle_geometry` | Obstacle Geometry Variations | `arc_over_obstacle`, `duck_under_obstacle`, `gripper_with_box`, `corridor_passthrough` |
 | `constraint_types` | Constraint and Dynamic-Obstacle Variations | `linear_constraint`, `orientation_constraint`, `dynamic_obstacle`, `single_arm_obstacle` |
 
