@@ -47,7 +47,7 @@ Two ways to activate scenarios in the machine config:
 - `preset_set` (recommended) — a string naming one of the bundles in `service.go::PresetBundles`. Filters bundle entries against the configured `arms` list, so users can declare a subset of arms and pick a heavy bundle without having to also declare every arm.
 - `arm_scenarios` — explicit `{arm: preset}` map. Overrides `preset_set` when set.
 
-Default bundle: `ee_variations` (8 arms across rows A and AB). For lighter demos use `ee_only` (4 arms, row A).
+Default bundle: `ee_only` (4 arms, row A — lightweight first-time demo). Switch to `ee_variations` (8 arms, rows A+AB with the linear-constraint comparison) or `all` (16 arms) for richer demos at higher CPU cost.
 
 Each preset is a closure in `presets.go` returning a `Scenario` with `Setup` (obstacles) and `Plan` hooks. Per-scenario state (cycle counters, etc.) lives in closure-captured atomics — each `presetByKey` call returns a fresh Scenario value so parallel goroutines don't share counters.
 

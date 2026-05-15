@@ -3,12 +3,13 @@
     {
       "type": "registry",
       "name": "motion-demo",
-      "module_id": "viam:example-motion-constraints-go"
+      "module_id": "viam:example-motion-constraints-go",
+      "version": "0.2.4"
     }
   ],
   "components": [
     {
-      "name": "arm0",
+      "name": "arm_a1",
       "api": "rdk:component:arm",
       "model": "rdk:builtin:simulated",
       "attributes": { "arm-model": "ur5e", "simulate-time": true },
@@ -16,19 +17,26 @@
         "parent": "world",
         "translation": { "x": 0, "y": 0, "z": 0 }
       }
+    },
+    {
+      "name": "tip_a1",
+      "api": "rdk:component:gripper",
+      "model": "rdk:builtin:fake",
+      "frame": { "parent": "arm_a1", "translation": { "x": 0, "y": 0, "z": 0 } }
     }
   ],
   "services": [
     {
-      "name": "demo",
+      "name": "motion-playground",
       "type": "world_state_store",
-      "model": "viam:example-motion-constraints-go:planner",
-      "depends_on": ["arm0"],
+      "model": "viam:example-motion-constraints-go:motion-playground",
+      "depends_on": ["arm_a1", "tip_a1"],
       "attributes": {
-        "arms": ["arm0"],
+        "arms": ["arm_a1"],
+        "arm_scenarios": { "arm_a1": "random_translation" },
         "loop": true,
-        "interval_s": 3,
-        "presets": ["single_arm_obstacle"]
+        "interval_s": 4,
+        "preview_density": 4
       }
     }
   ]

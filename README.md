@@ -45,7 +45,7 @@ The service config lives under `attributes`:
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
 | `arms` | `[]string` | **required** | Names of `rdk:component:arm` resources to orchestrate. |
-| `preset_set` | string | `"ee_variations"` | Named bundle of (arm → preset) mappings to activate. See **Preset bundles** below. Mutually exclusive with `arm_scenarios`. |
+| `preset_set` | string | `"ee_only"` | Named bundle of (arm → preset) mappings to activate. See **Preset bundles** below. Mutually exclusive with `arm_scenarios`. |
 | `arm_scenarios` | `{arm: preset}` | unset | Explicit per-arm scenario binding. Overrides `preset_set` when set. |
 | `ee_frames` | `{arm: frame}` | unset | Per-arm override of the planner's tool frame. Points at a gripper child frame attached to the arm in the machine config; planning solves for that frame's pose rather than the arm wrist. |
 | `loop` | bool | `true` | If true, scenarios cycle indefinitely; if false, the module idles until a `run` DoCommand. |
@@ -75,8 +75,8 @@ Set `preset_set` to one of these to activate a canonical (arm → scenario) mapp
 
 | Bundle | Description | Arm names |
 | --- | --- | --- |
-| `ee_only` | End-Effector Control Frame Variations | `arm_a1..a4` |
-| `ee_variations` (default) | EE Control Frames + Linear Constraint Comparison | `arm_a1..a4`, `arm_ab1..ab4` |
+| `ee_only` (default) | End-Effector Control Frame Variations | `arm_a1..a4` |
+| `ee_variations` | EE Control Frames + Linear Constraint Comparison | `arm_a1..a4`, `arm_ab1..ab4` |
 | `obstacle_geometry` | Obstacle Geometry Variations | `arm_b1..b4` |
 | `constraint_types` | Constraint and Dynamic-Obstacle Variations | `arm_c1..c4` |
 | `all` | All scenarios (heaviest — 16 arms) | every arm above |

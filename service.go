@@ -96,9 +96,10 @@ var PresetBundles = map[string]map[string]string{
 }
 
 // DefaultPresetSet is used when neither arm_scenarios nor preset_set is
-// supplied. Picked to keep the demo lightweight (8 arms) while showing
-// the EE-frame and linear-constraint comparison side-by-side.
-const DefaultPresetSet = "ee_variations"
+// supplied. Picked to keep the demo lightweight (4 arms) and visually
+// readable for first-time users; switch to "ee_variations" or "all"
+// for richer demos at higher CPU cost.
+const DefaultPresetSet = "ee_only"
 
 // RowDescriptions are human-readable labels for the conceptual rows in
 // the grid demo. Surfaced via DoCommand `list` so users can identify
