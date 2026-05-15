@@ -467,27 +467,58 @@ func presetRandomRotation() Scenario {
 // straight cartesian line across the EE workspace. Pair with an EE-frame
 // override to see gripper-vs-wrist trail differences.
 //
-// 800mm Y-swing with 100mm line tolerance is genuinely constraining — cbirrt
-// has to find joint paths that keep the EE inside a narrow tube along the
-// Y axis (not the natural arc it would pick unconstrained). The host can
-// keep up because (a) MP_NUM_THREADS=2 caps cbirrt's per-plan workers and
-// (b) max_concurrent_plans=2 caps simultaneous PlanMotion calls.
+// Empirical lesson learned the hard way: tight position anchors + offset
+// gripper EE + LinearConstraint is a recipe for IK failure ("zero IK
+// solutions" — the wrist can't reach the goal position with the required
+// orientation) AND cbirrt timeouts (even when IK succeeds at the endpoint,
+// finding a constraint-respecting path is hard). The fix: use the EXACT
+// same 7 varied waypoints as random_translation (proven to be reachable
+// for both wrist-EE and gripper-EE plans), keep identity goal orientation
+// (also proven reachable at these waypoints), and apply a LOOSE
+// LinearConstraint as a soft preference. cbirrt converges quickly and the
+// resulting paths are visibly straighter than random_translation's natural
+// arcs, even with the loose tolerance.
 func presetRandomTranslationLinear() Scenario {
-	anchorA := r3.Vector{X: 500, Y: 400, Z: 400}
-	anchorB := r3.Vector{X: 500, Y: -400, Z: 400}
+	waypoints := []r3.Vector{
+		{X: 500, Y: 250, Z: 400},
+		{X: 350, Y: -250, Z: 550},
+		{X: 600, Y: 0, Z: 300},
+		{X: 400, Y: 200, Z: 500},
+		{X: 500, Y: -200, Z: 350},
+		{X: 450, Y: 100, Z: 450},
+		{X: 550, Y: -100, Z: 500},
+	}
 	constraints := &motionplan.Constraints{
 		LinearConstraint: []motionplan.LinearConstraint{
-			{LineToleranceMm: 100, OrientationToleranceDegs: 90},
+			{LineToleranceMm: 300, OrientationToleranceDegs: 180},
 		},
 	}
+	var counter int64
 	return Scenario{
 		Key:         "random_translation_linear",
-		Description: "Alternates between two workspace-spanning anchors under a tight LinearConstraint.",
+		Description: "Visits a varied waypoint sequence under a loose LinearConstraint — paths are visibly straighter than the unconstrained variant.",
 		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
 			return nil, nil
 		},
-		Plan: alternateBetweenAnchors("random_translation_linear", anchorA, anchorB, constraints,
-			useCurrentEEOrientation),
+		Plan: func(
+			ctx context.Context,
+			r *resolved,
+			fs *referenceframe.FrameSystem,
+			armName string,
+			obstacles []scenarioObstacle,
+		) (motionplan.Plan, error) {
+			idx := int(atomic.AddInt64(&counter, 1)-1) % len(waypoints)
+			off := waypoints[idx]
+			goal := applyArmOffset(r.armBase(armName), off)
+			if r.logger != nil {
+				r.logger.Infow("task-space: random_translation_linear goal",
+					"arm", armName,
+					"waypoint_idx", idx,
+					"offset_local", []float64{off.X, off.Y, off.Z},
+				)
+			}
+			return planSingleArmToPose(ctx, r, fs, armName, goal, obstacles, constraints)
+		},
 	}
 }
 
