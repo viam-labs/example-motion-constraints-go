@@ -90,6 +90,7 @@ func (s *service) runScenario(ctx context.Context, scn Scenario, armName string)
 	density := s.previewDensity
 	abortOnCollision := s.abortOnCollision
 	disablePreviewGhosts := s.disablePreviewGhosts
+	maxGhosts := s.maxPreviewGhosts
 	s.mu.Unlock()
 	if r == nil {
 		return nil, fmt.Errorf("dependencies not yet resolved")
@@ -218,10 +219,10 @@ func (s *service) runScenario(ctx context.Context, scn Scenario, armName string)
 		log.Infow("scenario: ghost trail skipped (disable_preview_ghosts=true)",
 			"arm", armName, "traj_steps", len(traj))
 	} else {
-		previewUUIDs = s.emitDenseTrajectoryGhosts(armName, previewFrame, traj, fs, density)
+		previewUUIDs = s.emitDenseTrajectoryGhosts(armName, previewFrame, traj, fs, density, maxGhosts)
 		log.Infow("scenario: ghost trail emitted",
 			"arm", armName, "count", len(previewUUIDs), "density", density,
-			"traj_steps", len(traj))
+			"traj_steps", len(traj), "max_ghosts", maxGhosts)
 	}
 	// Defer ghost-trail cleanup so EVERY exit path (success, collision-
 	// abort, execute error) tears down its trail. Without this, an
@@ -373,6 +374,7 @@ func (s *service) emitDenseTrajectoryGhosts(
 	traj motionplan.Trajectory,
 	fs *referenceframe.FrameSystem,
 	density int,
+	maxGhosts int,
 ) [][]byte {
 	if previewFrame == "" {
 		previewFrame = armName
@@ -416,6 +418,25 @@ func (s *service) emitDenseTrajectoryGhosts(
 	}
 	if len(samples) == 0 {
 		return nil
+	}
+
+	// Down-sample to at most maxGhosts evenly-spaced samples, keeping the
+	// endpoints. cbirrt under a LinearConstraint returns 100+ trajectory
+	// waypoints (it samples densely to verify the constraint); emitting
+	// all of them in a tight loop locks the 3D viewer's JS main thread
+	// for the duration of the burst. A capped, evenly-spaced subset
+	// preserves the trail's visible shape — especially under linear
+	// constraint, where every sample lies on the same straight line —
+	// while keeping the message burst small enough that pan/zoom stays
+	// responsive. maxGhosts<=0 disables the cap.
+	if maxGhosts > 0 && len(samples) > maxGhosts {
+		downsampled := make([]sample, 0, maxGhosts)
+		// Linear-interpolated index spacing keeps endpoints fixed.
+		for i := 0; i < maxGhosts; i++ {
+			idx := i * (len(samples) - 1) / (maxGhosts - 1)
+			downsampled = append(downsampled, samples[idx])
+		}
+		samples = downsampled
 	}
 
 	// Reference-frame markers (axes triads): only start + end. Each axes

@@ -69,13 +69,20 @@ type Config struct {
 	MaxConcurrentPlans int `json:"max_concurrent_plans,omitempty"`
 
 	// DisablePreviewGhosts skips the trajectory-ghost emission entirely.
-	// Diagnostic switch: a linear-constrained plan returns 100+ trajectory
-	// waypoints (cbirrt has to sample densely to verify the constraint),
-	// each of which becomes a TransformChange the 3D viewer's JS main
-	// thread has to process. Setting this to true is the cleanest way to
-	// test whether the trajectory-ghost burst is what makes the viewer
-	// stall. Axes markers (start+end) and the goal marker still emit.
+	// Kill-switch for diagnostics. Axes markers + goal marker still emit.
 	DisablePreviewGhosts bool `json:"disable_preview_ghosts,omitempty"`
+
+	// MaxPreviewGhosts caps the TOTAL number of trajectory-ghost spheres
+	// emitted per plan, regardless of trajectory length. cbirrt under a
+	// LinearConstraint returns 100+ waypoints (it samples densely to
+	// verify the constraint); emitting all of them × preview_density in
+	// a tight loop produces a TransformChange burst that locks the 3D
+	// viewer's JS main thread for the duration. With a cap, we
+	// down-sample evenly across the densified samples to keep the burst
+	// to a tractable size. Default 24 — enough to read the trail shape
+	// clearly, small enough that the browser doesn't stall. 0 means
+	// "use default"; -1 means "uncapped" (legacy behavior).
+	MaxPreviewGhosts int `json:"max_preview_ghosts,omitempty"`
 }
 
 // Validate is called by the resource graph when the service is (re)configured.

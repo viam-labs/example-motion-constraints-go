@@ -43,6 +43,12 @@ const (
 	// typical dev box's cores free for viam-server's gRPC handlers when
 	// cbirrt is using NumCPU/2 worker goroutines per plan.
 	DefaultMaxConcurrentPlans = 2
+	// DefaultMaxPreviewGhosts caps trajectory-ghost emissions per plan to
+	// keep the browser-side burst small. Picked empirically: 24 is dense
+	// enough to read the path's shape (especially under linear constraint
+	// where every ghost is on a straight line), small enough that the
+	// emit burst doesn't stall the viewer's JS main thread.
+	DefaultMaxPreviewGhosts = 24
 	subscriberBufSize      = 256
 )
 
@@ -181,6 +187,7 @@ type service struct {
 	previewDensity     int
 	abortOnCollision   bool
 	disablePreviewGhosts bool
+	maxPreviewGhosts   int
 	loop          bool
 	paused        bool
 	presets       []string
@@ -303,6 +310,14 @@ func (s *service) Reconfigure(
 		s.abortOnCollision = true
 	}
 	s.disablePreviewGhosts = cfg.DisablePreviewGhosts
+	switch {
+	case cfg.MaxPreviewGhosts == 0:
+		s.maxPreviewGhosts = DefaultMaxPreviewGhosts
+	case cfg.MaxPreviewGhosts < 0:
+		s.maxPreviewGhosts = 0 // uncapped
+	default:
+		s.maxPreviewGhosts = cfg.MaxPreviewGhosts
+	}
 	// (Re)build the plan-concurrency semaphore. We rebuild on every
 	// Reconfigure so a config change in MaxConcurrentPlans takes effect
 	// without a module restart. Any in-flight plans hold slots from the
