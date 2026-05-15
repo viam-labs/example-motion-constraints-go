@@ -33,13 +33,18 @@ const mpNumThreadsDefault = "2"
 
 func main() {
 	if os.Getenv("MP_NUM_THREADS") == "" {
+		fmt.Fprintf(os.Stderr, "[motion-playground] MP_NUM_THREADS unset; re-execing with MP_NUM_THREADS=%s\n", mpNumThreadsDefault)
 		env := append(os.Environ(), "MP_NUM_THREADS="+mpNumThreadsDefault)
 		if err := syscall.Exec(os.Args[0], os.Args, env); err != nil {
-			fmt.Fprintf(os.Stderr, "re-exec to set MP_NUM_THREADS failed: %v; continuing with default thread count\n", err)
+			fmt.Fprintf(os.Stderr, "[motion-playground] re-exec to set MP_NUM_THREADS failed: %v; continuing with default thread count\n", err)
 			// Fall through — the module still works, just with more
 			// cbirrt threads per plan.
 		}
 	}
+	// Log the post-exec value so viam-server's module log makes it obvious
+	// whether the re-exec actually took effect.
+	fmt.Fprintf(os.Stderr, "[motion-playground] startup MP_NUM_THREADS=%q pid=%d\n",
+		os.Getenv("MP_NUM_THREADS"), os.Getpid())
 	module.ModularMain(
 		resource.APIModel{API: worldstatestore.API, Model: motionconstraints.Model},
 	)

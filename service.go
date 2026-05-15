@@ -13,6 +13,7 @@ package motionconstraints
 import (
 	"context"
 	"fmt"
+	"os"
 	"runtime"
 	"sort"
 	"sync"
@@ -1121,8 +1122,28 @@ func (s *service) DoCommand(
 			"planning_cap":       planCap,
 		}, nil
 
+	case "stack_dump":
+		// Full goroutine stack dump. Diagnostic-only — use to compare a
+		// healthy state (e.g. ee_only running smoothly) vs. a frozen state
+		// (e.g. ee_variations with the 3D viewer unresponsive). Goroutines
+		// blocked on a mutex or channel in the frozen dump but not in the
+		// healthy dump point at the actual contention site.
+		//
+		// 4MB buffer is enough for ~10k goroutines worth of stack at typical
+		// depths — way more than this module ever runs.
+		buf := make([]byte, 4*1024*1024)
+		n := runtime.Stack(buf, true)
+		return map[string]any{
+			"goroutines":   runtime.NumGoroutine(),
+			"stack_bytes":  n,
+			"stack":        string(buf[:n]),
+			"mp_threads":   os.Getenv("MP_NUM_THREADS"),
+			"num_cpu":      runtime.NumCPU(),
+			"gomaxprocs":   runtime.GOMAXPROCS(0),
+		}, nil
+
 	default:
-		return nil, fmt.Errorf("unrecognized command %q; try one of: list, status, pause, resume, clear, run, next", verb)
+		return nil, fmt.Errorf("unrecognized command %q; try one of: list, status, pause, resume, clear, run, next, stats, stack_dump", verb)
 	}
 }
 
