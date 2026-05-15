@@ -78,10 +78,17 @@ var PresetBundles = map[string]map[string]string{
 	// against the orientation interpolation until the plan budget
 	// fires, both of which starve the viz.
 	"ee_variations": {
-		"arm_a1": "random_translation_linear",
-		"arm_a2": "random_rotation",
-		"arm_a3": "random_translation_linear",
-		"arm_a4": "random_rotation",
+		// All 4 arms run the linear_constraint scenario (300mm Y-swing
+		// between anchors, 200mm line tolerance, 90deg orientation
+		// tolerance — solves reliably for both wrist-targeted and
+		// gripper-targeted plans). The "variations" are the per-arm EE
+		// control frames (configured via ee_frames in machine config) —
+		// each arm's gripper offset traces a visibly different wrist
+		// path while the EE itself stays on the constrained line.
+		"arm_a1": "linear_constraint",
+		"arm_a2": "linear_constraint",
+		"arm_a3": "linear_constraint",
+		"arm_a4": "linear_constraint",
 	},
 	// Obstacle-geometry pedagogy: arc-over, duck-under, gripper-with-
 	// box, corridor pass-through. gripper_with_box assumes arm_a3 has
