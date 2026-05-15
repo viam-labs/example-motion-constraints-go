@@ -455,29 +455,27 @@ func presetRandomRotation() Scenario {
 
 // ---- random_translation_linear ---------------------------------------------
 
-// presetRandomTranslationLinear alternates between two nearby anchors with
-// a LinearConstraint so each hop traces a straight cartesian line. Pair
-// with an EE-frame override to see gripper-vs-wrist trail differences.
+// presetRandomTranslationLinear alternates between two workspace-spanning
+// anchors under a tight LinearConstraint, so each hop traces a meaningfully
+// straight cartesian line across the EE workspace. Pair with an EE-frame
+// override to see gripper-vs-wrist trail differences.
 //
-// IMPORTANT: this used to walk the same 7-waypoint workspace-spanning set
-// as random_translation, which dragged the whole demo down — each long
-// linear-constrained hop forced cbirrt to project random samples back onto
-// the constraint manifold via IK, blowing past the plan budget on most
-// cycles. Same lesson as presetLinearConstraint: keep the swing short and
-// the tolerances loose. ~300mm swing, 200mm line tolerance, 90deg
-// orientation tolerance — solves in well under a second so a1/a3 don't
-// dominate the host while a2/a4 try to run.
+// 800mm Y-swing with 100mm line tolerance is genuinely constraining — cbirrt
+// has to find joint paths that keep the EE inside a narrow tube along the
+// Y axis (not the natural arc it would pick unconstrained). The host can
+// keep up because (a) MP_NUM_THREADS=2 caps cbirrt's per-plan workers and
+// (b) max_concurrent_plans=2 caps simultaneous PlanMotion calls.
 func presetRandomTranslationLinear() Scenario {
-	anchorA := r3.Vector{X: 500, Y: 150, Z: 400}
-	anchorB := r3.Vector{X: 500, Y: -150, Z: 400}
+	anchorA := r3.Vector{X: 500, Y: 400, Z: 400}
+	anchorB := r3.Vector{X: 500, Y: -400, Z: 400}
 	constraints := &motionplan.Constraints{
 		LinearConstraint: []motionplan.LinearConstraint{
-			{LineToleranceMm: 200, OrientationToleranceDegs: 90},
+			{LineToleranceMm: 100, OrientationToleranceDegs: 90},
 		},
 	}
 	return Scenario{
 		Key:         "random_translation_linear",
-		Description: "Alternates between two nearby anchors under a LinearConstraint — straight-line cartesian path.",
+		Description: "Alternates between two workspace-spanning anchors under a tight LinearConstraint.",
 		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
 			return nil, nil
 		},
