@@ -32,10 +32,10 @@ import (
 var Model = resource.NewModel("viam", "example-motion-constraints-go", "motion-playground")
 
 const (
-	DefaultIntervalS       = 3.0
+	DefaultIntervalS       = 5.0
 	DefaultPreviewS        = 1.0
 	DefaultTickHz          = 30.0
-	DefaultPreviewDensity  = 6
+	DefaultPreviewDensity  = 2
 	maxTickHz              = 30.0
 	// DefaultMaxConcurrentPlans is the default ceiling on simultaneous
 	// armplanning.PlanMotion calls. Picked to leave roughly half of a

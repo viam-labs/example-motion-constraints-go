@@ -404,18 +404,12 @@ func (s *service) emitDenseTrajectoryGhosts(
 		return nil
 	}
 
-	// Reference-frame markers (axes triads): always the first and last
-	// sample, plus 0-3 intermediates depending on how long the trail is.
+	// Reference-frame markers (axes triads): only start + end. Each axes
+	// marker is its own scene entity (sphere + 3 axis cylinders the
+	// renderer draws from show_axes_helper) and contributes
+	// disproportionately to per-cycle message volume — intermediates were
+	// nice but cost more than they were worth in browser render load.
 	axesIdx := map[int]struct{}{0: {}, len(samples) - 1: {}}
-	if len(samples) >= 30 {
-		// Three intermediates at quartiles.
-		for _, frac := range []float64{0.25, 0.5, 0.75} {
-			axesIdx[int(float64(len(samples)-1)*frac)] = struct{}{}
-		}
-	} else if len(samples) >= 15 {
-		// One intermediate at the midpoint.
-		axesIdx[(len(samples)-1)/2] = struct{}{}
-	}
 
 	for i, sm := range samples {
 		uuid := []byte(fmt.Sprintf("traj:%s:%d:%d", armName, ts, i))

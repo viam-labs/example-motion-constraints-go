@@ -49,8 +49,8 @@ The service config lives under `attributes`:
 | `arm_scenarios` | `{arm: preset}` | unset | Explicit per-arm scenario binding. Overrides `preset_set` when set. |
 | `ee_frames` | `{arm: frame}` | unset | Per-arm override of the planner's tool frame. Points at a gripper child frame attached to the arm in the machine config; planning solves for that frame's pose rather than the arm wrist. |
 | `loop` | bool | `true` | If true, scenarios cycle indefinitely; if false, the module idles until a `run` DoCommand. |
-| `interval_s` | float | `3.0` | Pause in seconds between scenario iterations on a given arm. |
-| `preview_density` | int | `6` | Interpolated joint samples per planner waypoint pair when rendering the ghost trajectory. Higher = smoother trail at higher render cost. Set to 1 for keyframes-only. |
+| `interval_s` | float | `5.0` | Pause in seconds between scenario iterations on a given arm. |
+| `preview_density` | int | `2` | Interpolated joint samples per planner waypoint pair when rendering the ghost trajectory. Higher = smoother trail at higher render cost. Set to 1 for keyframes-only. |
 | `abort_on_collision` | bool | `true` | If the trajectory's pre-flight collision check finds a hit, skip the execute step (leave the trajectory + red-tinted obstacle on screen). |
 | `tick_hz` | float | `30` | Visualization tick rate (capped at 30). |
 | `max_concurrent_plans` | int | `2` | Ceiling on simultaneous `PlanMotion` calls across all arms. The cbirrt planner spawns ~`NumCPU/2` worker goroutines per call; without a cap, N arms planning in parallel saturate viam-server's Go runtime and starve the WebRTC stream that feeds the 3D scene viewer. Lower = smoother viz; higher = more arm parallelism. |
