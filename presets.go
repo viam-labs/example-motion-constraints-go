@@ -123,7 +123,7 @@ func presetSingleArmObstacle() Scenario {
 			}
 			return []scenarioObstacle{{Geom: geom, Color: &ColorObstacle}}, nil
 		},
-		Plan: alternateBetweenAnchors("single_arm_obstacle", anchorAOffset, anchorBOffset, nil),
+		Plan: alternateBetweenAnchors("single_arm_obstacle", anchorAOffset, anchorBOffset, nil, nil),
 	}
 }
 
@@ -151,7 +151,13 @@ func presetLinearConstraint() Scenario {
 		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
 			return nil, nil
 		},
-		Plan: alternateBetweenAnchors("linear_constraint", anchorA, anchorB, constraints),
+		// Goal orientation OZ=+1 (tool +Z aligned with world +Z) is what
+		// ur5e naturally produces at its ready pose — identity orientation
+		// is physically unreachable for the wrist when the EE is an offset
+		// gripper. Using OZ=+1 lets the same scenario work for both
+		// wrist-targeted (no ee_frames override) and gripper-targeted plans.
+		Plan: alternateBetweenAnchors("linear_constraint", anchorA, anchorB, constraints,
+			&spatialmath.OrientationVectorDegrees{OZ: 1, Theta: 0}),
 	}
 }
 
@@ -176,7 +182,8 @@ func presetOrientationConstraint() Scenario {
 		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
 			return nil, nil
 		},
-		Plan: alternateBetweenAnchors("orientation_constraint", anchorA, anchorB, constraints),
+		Plan: alternateBetweenAnchors("orientation_constraint", anchorA, anchorB, constraints,
+			&spatialmath.OrientationVectorDegrees{OZ: 1, Theta: 0}),
 	}
 }
 
@@ -214,7 +221,7 @@ func presetDynamicObstacle() Scenario {
 				},
 			}}, nil
 		},
-		Plan: alternateBetweenAnchors("dynamic_obstacle", anchorA, anchorB, nil),
+		Plan: alternateBetweenAnchors("dynamic_obstacle", anchorA, anchorB, nil, nil),
 	}
 }
 
@@ -251,7 +258,7 @@ func presetMultiArmChoreography() Scenario {
 			obstacles []scenarioObstacle,
 		) (motionplan.Plan, error) {
 			siblingObstacles := injectSiblingArmObstacles(ctx, r, fs, armName)
-			swing := alternateBetweenAnchors("multi_arm_choreography", anchorA, anchorB, nil)
+			swing := alternateBetweenAnchors("multi_arm_choreography", anchorA, anchorB, nil, nil)
 			return swing(ctx, r, fs, armName, siblingObstacles)
 		},
 	}
@@ -339,7 +346,7 @@ func presetObstacleProgression() Scenario {
 			}
 			return obstacles, nil
 		},
-		Plan: alternateBetweenAnchors("obstacle_progression", anchorA, anchorB, nil),
+		Plan: alternateBetweenAnchors("obstacle_progression", anchorA, anchorB, nil, nil),
 	}
 }
 
@@ -479,7 +486,8 @@ func presetRandomTranslationLinear() Scenario {
 		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
 			return nil, nil
 		},
-		Plan: alternateBetweenAnchors("random_translation_linear", anchorA, anchorB, constraints),
+		Plan: alternateBetweenAnchors("random_translation_linear", anchorA, anchorB, constraints,
+			&spatialmath.OrientationVectorDegrees{OZ: 1, Theta: 0}),
 	}
 }
 
@@ -568,7 +576,7 @@ func presetArcOverObstacle() Scenario {
 			}
 			return []scenarioObstacle{{Geom: geom, Color: &ColorObstacle}}, nil
 		},
-		Plan: alternateBetweenAnchors("arc_over_obstacle", anchorA, anchorB, nil),
+		Plan: alternateBetweenAnchors("arc_over_obstacle", anchorA, anchorB, nil, nil),
 	}
 }
 
@@ -597,7 +605,7 @@ func presetDuckUnderObstacle() Scenario {
 			}
 			return []scenarioObstacle{{Geom: geom, Color: &ColorObstacle}}, nil
 		},
-		Plan: alternateBetweenAnchors("duck_under_obstacle", anchorA, anchorB, nil),
+		Plan: alternateBetweenAnchors("duck_under_obstacle", anchorA, anchorB, nil, nil),
 	}
 }
 
@@ -629,7 +637,7 @@ func presetGripperWithBox() Scenario {
 			}
 			return []scenarioObstacle{{Geom: geom, Color: &ColorObstacle}}, nil
 		},
-		Plan: alternateBetweenAnchors("gripper_with_box", anchorA, anchorB, nil),
+		Plan: alternateBetweenAnchors("gripper_with_box", anchorA, anchorB, nil, nil),
 	}
 }
 
@@ -672,7 +680,7 @@ func presetCorridorPassthrough() Scenario {
 				{Geom: boxB, Color: &ColorObstacle},
 			}, nil
 		},
-		Plan: alternateBetweenAnchors("corridor_passthrough", anchorA, anchorB, nil),
+		Plan: alternateBetweenAnchors("corridor_passthrough", anchorA, anchorB, nil, nil),
 	}
 }
 
@@ -692,10 +700,18 @@ func presetCorridorPassthrough() Scenario {
 // An earlier version of this helper compared local-frame EE against
 // world-frame anchor poses, which made every per-arm scenario stuck on
 // the same anchor forever (max_joint_delta_rad: 0 in every cycle).
+// alternateBetweenAnchors returns a Plan closure that toggles between two
+// anchor positions. goalOrient is the orientation specification for the
+// goal pose; pass nil for identity orientation (legacy behavior). For
+// scenarios with offset-gripper EE frames, identity orientation is often
+// physically unreachable for the wrist (ur5e workspace constraint), so
+// pass an OZ=+1 OrientationVectorDegrees to match what the ready pose
+// naturally produces.
 func alternateBetweenAnchors(
 	scenarioKey string,
 	anchorAOffset, anchorBOffset r3.Vector,
 	constraints *motionplan.Constraints,
+	goalOrient *spatialmath.OrientationVectorDegrees,
 ) func(context.Context, *resolved, *referenceframe.FrameSystem, string, []scenarioObstacle) (motionplan.Plan, error) {
 	return func(
 		ctx context.Context,
@@ -738,15 +754,26 @@ func alternateBetweenAnchors(
 				}
 			}
 		}
-		goal := applyArmOffset(r.armBase(armName), goalOffset)
+		var goal spatialmath.Pose
+		if goalOrient != nil {
+			armBasePt := r.armBase(armName).Point()
+			goal = spatialmath.NewPose(
+				r3.Vector{X: armBasePt.X + goalOffset.X, Y: armBasePt.Y + goalOffset.Y, Z: armBasePt.Z + goalOffset.Z},
+				goalOrient,
+			)
+		} else {
+			goal = applyArmOffset(r.armBase(armName), goalOffset)
+		}
 		if r.logger != nil {
 			goalPt := goal.Point()
+			ov := goal.Orientation().OrientationVectorDegrees()
 			r.logger.Infow("task-space: cartesian goal",
 				"arm", armName,
 				"scenario", scenarioKey,
 				"anchor_picked", pickedLabel,
 				"goal_world", []float64{goalPt.X, goalPt.Y, goalPt.Z},
 				"goal_offset_local", []float64{goalOffset.X, goalOffset.Y, goalOffset.Z},
+				"goal_orient_ov_deg", []float64{ov.OX, ov.OY, ov.OZ, ov.Theta},
 			)
 		}
 		plan, err := planSingleArmToPose(ctx, r, fs, armName, goal, obstacles, constraints)

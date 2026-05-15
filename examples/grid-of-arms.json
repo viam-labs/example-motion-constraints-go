@@ -4,7 +4,7 @@
       "type": "registry",
       "name": "motion-demo",
       "module_id": "viam:example-motion-constraints-go",
-      "version": "0.2.4"
+      "version": "0.5.1"
     }
   ],
   "components": [
@@ -30,11 +30,11 @@
     },
     {
       "name": "tip_a1", "api": "rdk:component:gripper", "model": "rdk:builtin:fake",
-      "frame": { "parent": "arm_a1", "translation": { "x": 0, "y": 0, "z": 0 } }
+      "frame": { "parent": "arm_a1", "translation": { "x": 0, "y": 0, "z": 120 } }
     },
     {
       "name": "tip_a2", "api": "rdk:component:gripper", "model": "rdk:builtin:fake",
-      "frame": { "parent": "arm_a2", "translation": { "x": 0, "y": 0, "z": 0 } }
+      "frame": { "parent": "arm_a2", "translation": { "x": 60, "y": 0, "z": 100 } }
     },
     {
       "name": "gripper_a3", "api": "rdk:component:gripper", "model": "rdk:builtin:fake",
@@ -53,11 +53,15 @@
       "depends_on": ["arm_a1", "arm_a2", "arm_a3", "arm_a4", "tip_a1", "tip_a2", "gripper_a3", "gripper_a4"],
       "attributes": {
         "arms": ["arm_a1", "arm_a2", "arm_a3", "arm_a4"],
-        "preset_set": "ee_only",
-        "ee_frames": { "arm_a3": "gripper_a3", "arm_a4": "gripper_a4" },
+        "preset_set": "ee_variations",
+        "ee_frames": {
+          "arm_a1": "tip_a1",
+          "arm_a2": "tip_a2",
+          "arm_a3": "gripper_a3",
+          "arm_a4": "gripper_a4"
+        },
         "loop": true,
-        "interval_s": 4,
-        "preview_density": 4
+        "interval_s": 2
       }
     }
   ]
