@@ -891,9 +891,24 @@ func alternateBetweenAnchors(
 //      designed mode of operation. ee_variations + warmup keeps even
 //      tight constraints reliable here.
 var (
-	eeAnchorA    = r3.Vector{X: 450, Y: 400, Z: 200}
-	eeAnchorB    = r3.Vector{X: 450, Y: -400, Z: 200}
-	eeGoalOrient = &spatialmath.OrientationVectorDegrees{OZ: -1, Theta: 0}
+	eeAnchorA = r3.Vector{X: 450, Y: 400, Z: 200}
+	eeAnchorB = r3.Vector{X: 450, Y: -400, Z: 200}
+	// Different orientation per anchor so the OrientationConstraint
+	// actually has something to do. Without this, both endpoints having
+	// the same orient means cbirrt's natural joint-interpolated path
+	// keeps orient close enough to constant that the constraint never
+	// engages — and a3 looks identical to a1.
+	//
+	// Anchor A: tool straight down (cobot natural pose).
+	// Anchor B: tool tilted 45deg toward +X (gripper "leaning forward").
+	// Without constraint, cbirrt may take a shortcut path that swings
+	// orientation through wild intermediate values; with a tight orient
+	// constraint, the path must interpolate smoothly between the two.
+	eeOrientA = &spatialmath.OrientationVectorDegrees{OX: 0, OY: 0, OZ: -1, Theta: 0}
+	eeOrientB = &spatialmath.OrientationVectorDegrees{OX: 0.7, OY: 0, OZ: -0.7, Theta: 0}
+	// eeGoalOrient is the warmup target — tool down, since warmup goes
+	// to anchorA. Must match eeOrientA.
+	eeGoalOrient = eeOrientA
 )
 
 func presetEEBaseline() Scenario {
@@ -903,7 +918,7 @@ func presetEEBaseline() Scenario {
 		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
 			return nil, nil
 		},
-		Plan: alternateBetweenAnchors("ee_baseline", eeAnchorA, eeAnchorB, nil, eeGoalOrient),
+		Plan: alternateBetweenAnchorPoses("ee_baseline", eeAnchorA, eeAnchorB, eeOrientA, eeOrientB, nil),
 	}
 }
 
@@ -924,7 +939,7 @@ func presetEELinear() Scenario {
 		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
 			return nil, nil
 		},
-		Plan: alternateBetweenAnchors("ee_linear", eeAnchorA, eeAnchorB, constraints, eeGoalOrient),
+		Plan: alternateBetweenAnchorPoses("ee_linear", eeAnchorA, eeAnchorB, eeOrientA, eeOrientB, constraints),
 	}
 }
 
@@ -948,7 +963,7 @@ func presetEEOrient() Scenario {
 		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
 			return nil, nil
 		},
-		Plan: alternateBetweenAnchors("ee_orient", eeAnchorA, eeAnchorB, constraints, eeGoalOrient),
+		Plan: alternateBetweenAnchorPoses("ee_orient", eeAnchorA, eeAnchorB, eeOrientA, eeOrientB, constraints),
 	}
 }
 
@@ -969,7 +984,7 @@ func presetEECombined() Scenario {
 		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
 			return nil, nil
 		},
-		Plan: alternateBetweenAnchors("ee_combined", eeAnchorA, eeAnchorB, constraints, eeGoalOrient),
+		Plan: alternateBetweenAnchorPoses("ee_combined", eeAnchorA, eeAnchorB, eeOrientA, eeOrientB, constraints),
 	}
 }
 
@@ -1002,5 +1017,64 @@ func presetEEOrient120() Scenario {
 			return nil, nil
 		},
 		Plan: alternateBetweenAnchors("ee_orient_120", eeAnchorA, eeAnchorB, constraints, eeGoalOrient),
+	}
+}
+
+// alternateBetweenAnchorPoses is the per-orientation variant of
+// alternateBetweenAnchors. The two anchors carry their own full poses
+// (position + orientation), so OrientationConstraint actually has
+// distinct endpoints to interpolate between — a constraint at the
+// midpoint can then differ from the natural cbirrt path. Used by the
+// ee_variations bundle.
+func alternateBetweenAnchorPoses(
+	scenarioKey string,
+	anchorAOffset, anchorBOffset r3.Vector,
+	anchorAOrient, anchorBOrient *spatialmath.OrientationVectorDegrees,
+	constraints *motionplan.Constraints,
+) func(context.Context, *resolved, *referenceframe.FrameSystem, string, []scenarioObstacle) (motionplan.Plan, error) {
+	return func(
+		ctx context.Context,
+		r *resolved,
+		fs *referenceframe.FrameSystem,
+		armName string,
+		obstacles []scenarioObstacle,
+	) (motionplan.Plan, error) {
+		armRes, ok := r.arms[armName]
+		if !ok {
+			return nil, fmt.Errorf("%s: arm %q is not configured", scenarioKey, armName)
+		}
+		// Pick the FARTHER anchor as the goal (compare against current EE).
+		goalOffset := anchorAOffset
+		goalOrient := anchorAOrient
+		pickedLabel := "A"
+		if armRes != nil {
+			if ee, err := armRes.EndPosition(ctx, nil); err == nil && ee != nil {
+				eePt := ee.Point()
+				dA := dist3(eePt.X-anchorAOffset.X, eePt.Y-anchorAOffset.Y, eePt.Z-anchorAOffset.Z)
+				dB := dist3(eePt.X-anchorBOffset.X, eePt.Y-anchorBOffset.Y, eePt.Z-anchorBOffset.Z)
+				if dA < dB {
+					goalOffset = anchorBOffset
+					goalOrient = anchorBOrient
+					pickedLabel = "B"
+				}
+			}
+		}
+		armBasePt := r.armBase(armName).Point()
+		goal := spatialmath.NewPose(
+			r3.Vector{X: armBasePt.X + goalOffset.X, Y: armBasePt.Y + goalOffset.Y, Z: armBasePt.Z + goalOffset.Z},
+			goalOrient,
+		)
+		if r.logger != nil {
+			gp := goal.Point()
+			ov := goal.Orientation().OrientationVectorDegrees()
+			r.logger.Infow("task-space: anchor-pose goal",
+				"arm", armName,
+				"scenario", scenarioKey,
+				"picked", pickedLabel,
+				"goal_world", []float64{gp.X, gp.Y, gp.Z},
+				"goal_orient_ov_deg", []float64{ov.OX, ov.OY, ov.OZ, ov.Theta},
+			)
+		}
+		return planSingleArmToPose(ctx, r, fs, armName, goal, obstacles, constraints)
 	}
 }
