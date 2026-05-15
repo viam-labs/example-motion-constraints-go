@@ -23,6 +23,7 @@ import (
 	commonpb "go.viam.com/api/common/v1"
 	pb "go.viam.com/api/service/worldstatestore/v1"
 	"go.viam.com/rdk/logging"
+	"go.viam.com/rdk/motionplan"
 	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/services/worldstatestore"
@@ -1182,8 +1183,15 @@ func (s *service) DoCommand(
 			"gomaxprocs":   runtime.GOMAXPROCS(0),
 		}, nil
 
+	case "probe_constraints":
+		// Run a small sweep of (arm, constraint) plans inside the live
+		// runtime — same code path as scenarios use, but with a controlled
+		// set of constraint configs. Returns per-combo success/failure +
+		// timing. Diagnostic-only.
+		return s.probeConstraints(ctx, cmd)
+
 	default:
-		return nil, fmt.Errorf("unrecognized command %q; try one of: list, status, pause, resume, clear, run, next, stats, stack_dump", verb)
+		return nil, fmt.Errorf("unrecognized command %q; try one of: list, status, pause, resume, clear, run, next, stats, stack_dump, probe_constraints", verb)
 	}
 }
 
@@ -1316,4 +1324,128 @@ func (s *service) recordError(armName, errMsg string) {
 	s.lastErrorByArm[armName] = errMsg
 	s.lastStageByArm[armName] = "errored"
 	s.lastStageAtByArm[armName] = time.Now()
+}
+
+// probeConstraints runs a small constraint-sweep inside the LIVE runtime
+// so we get the actual runtime behavior — bypasses any divergence
+// between cmd/probe and the real framesystem service.
+//
+// For each (arm, constraint) combo, calls planSingleArmToPose with a
+// goal at the ee_variations anchor A pose and reports success/failure
+// + timing. Single shot — call it again to re-run.
+//
+// Caller can optionally pass {"arm": "<name>"} to test a single arm,
+// otherwise sweeps all configured arms.
+func (s *service) probeConstraints(ctx context.Context, cmd map[string]any) (map[string]any, error) {
+	s.mu.Lock()
+	r := s.deps
+	armNames := append([]string{}, s.armNames...)
+	s.mu.Unlock()
+	if r == nil {
+		return nil, fmt.Errorf("dependencies not yet resolved")
+	}
+	// Filter to a single arm if requested.
+	if armOnly, ok := cmd["arm"].(string); ok && armOnly != "" {
+		filtered := armNames[:0]
+		for _, n := range armNames {
+			if n == armOnly {
+				filtered = append(filtered, n)
+			}
+		}
+		armNames = filtered
+	}
+
+	// Same anchor as ee_variations bundle (eeAnchorA from presets.go).
+	anchor := r3.Vector{X: 450, Y: 100, Z: 450}
+
+	type cs struct {
+		name string
+		make func() *motionplan.Constraints
+	}
+	specs := []cs{
+		{"none", func() *motionplan.Constraints { return &motionplan.Constraints{} }},
+		{"linear_50_180", func() *motionplan.Constraints {
+			return &motionplan.Constraints{LinearConstraint: []motionplan.LinearConstraint{
+				{LineToleranceMm: 50, OrientationToleranceDegs: 180},
+			}}
+		}},
+		{"linear_200_180", func() *motionplan.Constraints {
+			return &motionplan.Constraints{LinearConstraint: []motionplan.LinearConstraint{
+				{LineToleranceMm: 200, OrientationToleranceDegs: 180},
+			}}
+		}},
+		{"linear_500_180", func() *motionplan.Constraints {
+			return &motionplan.Constraints{LinearConstraint: []motionplan.LinearConstraint{
+				{LineToleranceMm: 500, OrientationToleranceDegs: 180},
+			}}
+		}},
+		{"orient_45", func() *motionplan.Constraints {
+			return &motionplan.Constraints{OrientationConstraint: []motionplan.OrientationConstraint{
+				{OrientationToleranceDegs: 45},
+			}}
+		}},
+		{"orient_60", func() *motionplan.Constraints {
+			return &motionplan.Constraints{OrientationConstraint: []motionplan.OrientationConstraint{
+				{OrientationToleranceDegs: 60},
+			}}
+		}},
+		{"orient_90", func() *motionplan.Constraints {
+			return &motionplan.Constraints{OrientationConstraint: []motionplan.OrientationConstraint{
+				{OrientationToleranceDegs: 90},
+			}}
+		}},
+		{"orient_120", func() *motionplan.Constraints {
+			return &motionplan.Constraints{OrientationConstraint: []motionplan.OrientationConstraint{
+				{OrientationToleranceDegs: 120},
+			}}
+		}},
+		{"combined_200_45", func() *motionplan.Constraints {
+			return &motionplan.Constraints{LinearConstraint: []motionplan.LinearConstraint{
+				{LineToleranceMm: 200, OrientationToleranceDegs: 45},
+			}}
+		}},
+		{"combined_200_90", func() *motionplan.Constraints {
+			return &motionplan.Constraints{LinearConstraint: []motionplan.LinearConstraint{
+				{LineToleranceMm: 200, OrientationToleranceDegs: 90},
+			}}
+		}},
+	}
+
+	// Build the FrameSystem ONCE — same as runScenario does.
+	fs, err := buildFrameSystem(ctx, r)
+	if err != nil {
+		return nil, fmt.Errorf("build frame system: %w", err)
+	}
+
+	results := []map[string]any{}
+	for _, armName := range armNames {
+		// Identity-orientation goal at the anchor, in world coords.
+		goal := applyArmOffset(r.armBase(armName), anchor)
+		for _, spec := range specs {
+			start := time.Now()
+			_, err := planSingleArmToPose(ctx, r, fs, armName, goal, nil, spec.make())
+			dur := time.Since(start)
+			result := map[string]any{
+				"arm":        armName,
+				"constraint": spec.name,
+				"ms":         dur.Milliseconds(),
+			}
+			if err != nil {
+				result["ok"] = false
+				errStr := err.Error()
+				if len(errStr) > 120 {
+					errStr = errStr[:120] + "..."
+				}
+				result["err"] = errStr
+			} else {
+				result["ok"] = true
+			}
+			results = append(results, result)
+		}
+	}
+
+	return map[string]any{
+		"results":     results,
+		"anchor_used": []float64{anchor.X, anchor.Y, anchor.Z},
+	}, nil
 }

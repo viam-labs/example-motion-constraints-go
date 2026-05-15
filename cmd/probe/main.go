@@ -217,9 +217,12 @@ func tryCombo(ctx context.Context, logger logging.Logger, gripperZ int, ap ancho
 		zeroInputs[2] = -1.5707963267948966
 	}
 
-	// Identity orientation goals at both anchors.
-	goalA := spatialmath.NewPoseFromPoint(ap.a)
-	goalB := spatialmath.NewPoseFromPoint(ap.b)
+	// Identity orientation goals at both anchors — in WORLD frame, so add
+	// the arm's world origin (matches runtime's applyArmOffset). Must
+	// match the armOriginWorld in buildFrameSystem.
+	const baseX, baseY, baseZ = -1000.0, 1000.0, 0.0
+	goalA := spatialmath.NewPoseFromPoint(r3.Vector{X: baseX + ap.a.X, Y: baseY + ap.a.Y, Z: baseZ + ap.a.Z})
+	goalB := spatialmath.NewPoseFromPoint(r3.Vector{X: baseX + ap.b.X, Y: baseY + ap.b.Y, Z: baseZ + ap.b.Z})
 
 	// Try planning A → B with the configured EE frame and constraint.
 	start := time.Now()
@@ -282,9 +285,13 @@ func buildFrameSystem(ctx context.Context, logger logging.Logger, gripperZ int) 
 		return nil, nil, "", fmt.Errorf("kinematics: %w", err)
 	}
 
+	// Place the arm at the same world position as arm_a2 in the runtime
+	// (-1000, 1000, 0) so any world-coordinate sensitivity in the planner
+	// shows up in the probe results too.
 	fs := referenceframe.NewEmptyFrameSystem("probe")
+	armOriginWorld := r3.Vector{X: -1000, Y: 1000, Z: 0}
 	origin, err := referenceframe.NewStaticFrame("arm_origin",
-		spatialmath.NewPoseFromPoint(r3.Vector{}))
+		spatialmath.NewPoseFromPoint(armOriginWorld))
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("origin: %w", err)
 	}
