@@ -872,9 +872,16 @@ func alternateBetweenAnchors(
 //
 // See README "Constraint variations and their known issues" for the
 // warts on each constraint type.
+// 200mm Y-swing (was 400mm). Critical: under LinearConstraint, the
+// planner generates intermediate waypoints every defaultStepSizeMM=10mm
+// (motionplan/armplanning/plan_manager.go::generateWaypoints), each
+// requiring its own IK + cbirrt sub-plan within the total 3s budget. A
+// 400mm swing produces 40 sub-plans (~75ms each — too tight); 200mm
+// produces 20 (~150ms each — converges reliably). The motion is still
+// clearly visible in the 3D view.
 var (
-	eeAnchorA = r3.Vector{X: 450, Y: 200, Z: 450}
-	eeAnchorB = r3.Vector{X: 450, Y: -200, Z: 450}
+	eeAnchorA = r3.Vector{X: 450, Y: 100, Z: 450}
+	eeAnchorB = r3.Vector{X: 450, Y: -100, Z: 450}
 )
 
 func presetEEBaseline() Scenario {
