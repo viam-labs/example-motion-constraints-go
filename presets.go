@@ -944,22 +944,21 @@ func presetEELinear() Scenario {
 }
 
 func presetEEOrient() Scenario {
-	// OrientationToleranceDegs: 20. With tool-down goal orientation at
-	// BOTH anchors, cbirrt's natural joint-interpolated path lets the
-	// wrist orient drift 30-60deg from straight-down at the swing
-	// midpoint. A loose tolerance (90deg) doesn't engage; 20deg forces
-	// the wrist to stay tightly pointing down throughout the swing,
-	// producing a visibly more "controlled" path than ee_baseline. The
-	// warmup in runArmLoop puts the arm into a tool-down config first,
-	// so even tight orient tolerance plans from a feasible start state.
+	// OrientationToleranceDegs: 45. With ~45deg of orient transition
+	// REQUIRED between anchor A (tool-down) and anchor B (tool-tilted),
+	// the constraint at 20deg leaves cbirrt almost no wiggle room at the
+	// midpoint and the plan times out. 45deg gives room to interpolate
+	// while still being tight enough to make the planner closely TRACK
+	// the orient interpolation (instead of the wild orient shortcuts
+	// cbirrt picks unconstrained).
 	constraints := &motionplan.Constraints{
 		OrientationConstraint: []motionplan.OrientationConstraint{
-			{OrientationToleranceDegs: 20},
+			{OrientationToleranceDegs: 45},
 		},
 	}
 	return Scenario{
 		Key:         "ee_orient",
-		Description: "OrientationConstraint(20deg) — tool stays tightly pointing down through the swing.",
+		Description: "OrientationConstraint(45deg) — wrist orient must track the linear orient-interpolation between anchor A's tool-down and anchor B's tilted poses.",
 		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
 			return nil, nil
 		},
@@ -969,13 +968,13 @@ func presetEEOrient() Scenario {
 
 func presetEECombined() Scenario {
 	// Tight on both axes: 50mm line tolerance (matches ee_linear) +
-	// 20deg orientation tolerance (matches ee_orient). Visually shows
-	// "straight cartesian line AND tool stays down" at once — distinct
-	// from ee_linear (which lets wrist roll freely) and from ee_orient
-	// (which lets position arc).
+	// 45deg orientation tolerance (matches ee_orient — same reason: 20deg
+	// is too tight for cbirrt to find paths interpolating ~45deg of orient
+	// transition). Visually: "straight cartesian line AND tracked orient
+	// interpolation."
 	constraints := &motionplan.Constraints{
 		LinearConstraint: []motionplan.LinearConstraint{
-			{LineToleranceMm: 50, OrientationToleranceDegs: 20},
+			{LineToleranceMm: 50, OrientationToleranceDegs: 45},
 		},
 	}
 	return Scenario{
