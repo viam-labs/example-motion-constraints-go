@@ -896,14 +896,19 @@ func presetEEBaseline() Scenario {
 }
 
 func presetEELinear() Scenario {
+	// LineToleranceMm: 50 (TIGHT tube — visibly forces the EE onto a
+	// straight line vs the natural cbirrt arc). OrientationToleranceDegs:
+	// 180 (orientation unconstrained along the path). Empirically verified
+	// to plan reliably from homeJointPositionsReady for offset grippers at
+	// the Y±100mm/Z=450 anchors. See cmd/probe for the sweep.
 	constraints := &motionplan.Constraints{
 		LinearConstraint: []motionplan.LinearConstraint{
-			{LineToleranceMm: 200, OrientationToleranceDegs: 180},
+			{LineToleranceMm: 50, OrientationToleranceDegs: 180},
 		},
 	}
 	return Scenario{
 		Key:         "ee_linear",
-		Description: "Same anchor swing under a LinearConstraint — EE follows a straight cartesian line.",
+		Description: "Same anchor swing under a tight LinearConstraint — EE follows a visibly straight cartesian line.",
 		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
 			return nil, nil
 		},
@@ -912,14 +917,18 @@ func presetEELinear() Scenario {
 }
 
 func presetEEOrient() Scenario {
+	// OrientationToleranceDegs: 90 (was 45 — too tight to bridge from the
+	// ready pose's wrist orientation to identity at the goal). 90deg is
+	// the looseness at which OrientationConstraint reliably plans for
+	// offset grippers from the ready pose. cmd/probe verified.
 	constraints := &motionplan.Constraints{
 		OrientationConstraint: []motionplan.OrientationConstraint{
-			{OrientationToleranceDegs: 45},
+			{OrientationToleranceDegs: 90},
 		},
 	}
 	return Scenario{
 		Key:         "ee_orient",
-		Description: "Same anchor swing under an OrientationConstraint — tool orientation stays locked within 45deg.",
+		Description: "Same anchor swing under an OrientationConstraint — tool orientation stays within 90deg of the interpolated path orientation.",
 		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
 			return nil, nil
 		},
@@ -928,14 +937,20 @@ func presetEEOrient() Scenario {
 }
 
 func presetEECombined() Scenario {
+	// LinearConstraint with non-trivial orientation component: 200mm line
+	// tolerance + 45deg orientation tolerance. The combined effect is more
+	// constrained than ee_linear (orient must hold) AND more constrained
+	// than ee_orient (position must hold) — but with these specific
+	// tolerances, still plans reliably from the ready pose. cmd/probe
+	// confirmed combined_200_45 succeeds for all tested gripper z-offsets.
 	constraints := &motionplan.Constraints{
 		LinearConstraint: []motionplan.LinearConstraint{
-			{LineToleranceMm: 200, OrientationToleranceDegs: 30},
+			{LineToleranceMm: 200, OrientationToleranceDegs: 45},
 		},
 	}
 	return Scenario{
 		Key:         "ee_combined",
-		Description: "Same anchor swing under combined Linear + Orient constraints — the hardest of the four; may fail.",
+		Description: "Combined LinearConstraint(200mm) + 45deg orientation tolerance.",
 		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
 			return nil, nil
 		},
