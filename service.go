@@ -1096,6 +1096,22 @@ func (s *service) DoCommand(
 			errs[k] = v
 		}
 		sceneCount := len(s.scene)
+		// Break down scene entities by UUID prefix so we can see WHICH kind
+		// is accumulating. UUIDs are namespaced — e.g. "traj:armname:ts:i",
+		// "traj_axes:...", "traj_goal:...", "obstacle:armname:label",
+		// "label:armname". If `traj:*` keeps growing across cycles, the
+		// trajectory-ghost cleanup defer isn't firing for some path.
+		sceneByPrefix := map[string]int{}
+		for k := range s.scene {
+			prefix := "other"
+			for _, p := range []string{"traj_axes", "traj_goal", "traj", "obstacle", "label"} {
+				if len(k) >= len(p) && k[:len(p)] == p {
+					prefix = p
+					break
+				}
+			}
+			sceneByPrefix[prefix]++
+		}
 		subCount := len(s.subscribers)
 		animCount := len(s.animations)
 		planInFlight := s.planInFlight
@@ -1106,6 +1122,7 @@ func (s *service) DoCommand(
 			"phase":                 "10-parallel",
 			"goroutines":            runtime.NumGoroutine(),
 			"scene_count":           sceneCount,
+			"scene_by_prefix":       sceneByPrefix,
 			"subscribers":           subCount,
 			"animations":            animCount,
 			"cycles":                cycles,

@@ -154,22 +154,27 @@ func (s *service) runScenario(ctx context.Context, scn Scenario, armName string)
 		"fs_ms", time.Since(fsStart).Milliseconds(),
 		"frame_count", len(fs.FrameNames()),
 	)
-	// Cap concurrent plans across all arms. cbirrt spawns NumCPU/2 worker
-	// goroutines per call; without this cap, 4 arms planning simultaneously
-	// saturate the Go runtime inside viam-server and starve the WebRTC
-	// goroutines that feed the 3D scene viewer. See acquirePlanSlot for the
-	// full rationale.
+	// Cap concurrent PlanMotion calls across all arms. cbirrt spawns
+	// MP_NUM_THREADS worker goroutines per call (we re-exec with =2 in
+	// cmd/module/main.go); this semaphore caps how many such calls happen
+	// at once. CRITICAL: the slot is released IMMEDIATELY after Plan
+	// returns — not via defer at the end of runScenario — because the
+	// post-plan phases (preview emit, collision check, execute) are not
+	// CPU-bound on cbirrt and shouldn't block other arms from planning.
+	// Earlier versions held the slot through execute, which artificially
+	// serialized scenarios and made `planning_in_flight` actually mean
+	// "scenario_in_flight". Now those metrics actually measure planning.
 	s.recordStage(armName, "queued")
 	release, acqErr := s.acquirePlanSlot(ctx)
 	if acqErr != nil {
 		s.recordError(armName, "plan-queue: "+acqErr.Error())
 		return addedUUIDs, fmt.Errorf("acquire plan slot: %w", acqErr)
 	}
-	defer release()
 	s.recordStage(armName, "planning")
 	planStart := time.Now()
 	plan, err := scn.Plan(ctx, r, fs, armName, obstacles)
 	planMS := time.Since(planStart).Milliseconds()
+	release()
 	if err != nil {
 		s.recordError(armName, "plan: "+err.Error())
 		log.Errorw("scenario: plan failed", "arm", armName, "plan_ms", planMS, "err", err)
