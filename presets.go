@@ -878,16 +878,22 @@ func alternateBetweenAnchors(
 //
 // See README "Constraint variations and their known issues" for the
 // warts on each constraint type.
-// 200mm Y-swing (was 400mm). Critical: under LinearConstraint, the
-// planner generates intermediate waypoints every defaultStepSizeMM=10mm
-// (motionplan/armplanning/plan_manager.go::generateWaypoints), each
-// requiring its own IK + cbirrt sub-plan within the total 3s budget. A
-// 400mm swing produces 40 sub-plans (~75ms each — too tight); 200mm
-// produces 20 (~150ms each — converges reliably). The motion is still
-// clearly visible in the 3D view.
+// 800mm Y-swing at LOW Z, with tool-down orientation. Three things had
+// to come together:
+//   1. Bigger swing so the natural cbirrt arc is visibly different from
+//      LinearConstraint's forced straight line. At Y±100mm the arc is
+//      almost imperceptible; at Y±400mm it's obvious.
+//   2. Tool-pointing-DOWN goal orientation (eeGoalOrient OZ=-1). UR5e's
+//      null space is much larger when the tool points down — IK has many
+//      more solutions for "reach to (X,Y,Z) with tool down" than "with
+//      tool up", which makes constrained plans actually feasible.
+//   3. Low Z (200mm) so the arm is reaching to a "working surface" — its
+//      designed mode of operation. ee_variations + warmup keeps even
+//      tight constraints reliable here.
 var (
-	eeAnchorA = r3.Vector{X: 450, Y: 100, Z: 450}
-	eeAnchorB = r3.Vector{X: 450, Y: -100, Z: 450}
+	eeAnchorA    = r3.Vector{X: 450, Y: 400, Z: 200}
+	eeAnchorB    = r3.Vector{X: 450, Y: -400, Z: 200}
+	eeGoalOrient = &spatialmath.OrientationVectorDegrees{OZ: -1, Theta: 0}
 )
 
 func presetEEBaseline() Scenario {
@@ -897,7 +903,7 @@ func presetEEBaseline() Scenario {
 		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
 			return nil, nil
 		},
-		Plan: alternateBetweenAnchors("ee_baseline", eeAnchorA, eeAnchorB, nil, nil),
+		Plan: alternateBetweenAnchors("ee_baseline", eeAnchorA, eeAnchorB, nil, eeGoalOrient),
 	}
 }
 
@@ -918,7 +924,7 @@ func presetEELinear() Scenario {
 		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
 			return nil, nil
 		},
-		Plan: alternateBetweenAnchors("ee_linear", eeAnchorA, eeAnchorB, constraints, nil),
+		Plan: alternateBetweenAnchors("ee_linear", eeAnchorA, eeAnchorB, constraints, eeGoalOrient),
 	}
 }
 
@@ -938,7 +944,7 @@ func presetEEOrient() Scenario {
 		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
 			return nil, nil
 		},
-		Plan: alternateBetweenAnchors("ee_orient", eeAnchorA, eeAnchorB, constraints, nil),
+		Plan: alternateBetweenAnchors("ee_orient", eeAnchorA, eeAnchorB, constraints, eeGoalOrient),
 	}
 }
 
@@ -960,7 +966,7 @@ func presetEECombined() Scenario {
 		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
 			return nil, nil
 		},
-		Plan: alternateBetweenAnchors("ee_combined", eeAnchorA, eeAnchorB, constraints, nil),
+		Plan: alternateBetweenAnchors("ee_combined", eeAnchorA, eeAnchorB, constraints, eeGoalOrient),
 	}
 }
 
@@ -976,7 +982,7 @@ func presetEEOrient60() Scenario {
 		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
 			return nil, nil
 		},
-		Plan: alternateBetweenAnchors("ee_orient_60", eeAnchorA, eeAnchorB, constraints, nil),
+		Plan: alternateBetweenAnchors("ee_orient_60", eeAnchorA, eeAnchorB, constraints, eeGoalOrient),
 	}
 }
 
@@ -992,6 +998,6 @@ func presetEEOrient120() Scenario {
 		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
 			return nil, nil
 		},
-		Plan: alternateBetweenAnchors("ee_orient_120", eeAnchorA, eeAnchorB, constraints, nil),
+		Plan: alternateBetweenAnchors("ee_orient_120", eeAnchorA, eeAnchorB, constraints, eeGoalOrient),
 	}
 }

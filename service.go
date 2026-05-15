@@ -1245,7 +1245,13 @@ func (s *service) warmupArm(ctx context.Context, armName string) {
 		s.logger.Warnw("warmup: build frame system failed", "arm", armName, "err", err)
 		return
 	}
-	goal := applyArmOffset(r.armBase(armName), eeAnchorA)
+	// Build goal pose with eeGoalOrient (tool down) so the warmup lands
+	// the wrist in the same orientation the constrained scenarios expect.
+	armBasePt := r.armBase(armName).Point()
+	goal := spatialmath.NewPose(
+		r3.Vector{X: armBasePt.X + eeAnchorA.X, Y: armBasePt.Y + eeAnchorA.Y, Z: armBasePt.Z + eeAnchorA.Z},
+		eeGoalOrient,
+	)
 	warmupCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	plan, err := planSingleArmToPose(warmupCtx, r, fs, armName, goal, nil, nil)
