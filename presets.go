@@ -929,18 +929,22 @@ func presetEELinear() Scenario {
 }
 
 func presetEEOrient() Scenario {
-	// OrientationToleranceDegs: 90 (was 45 — too tight to bridge from the
-	// ready pose's wrist orientation to identity at the goal). 90deg is
-	// the looseness at which OrientationConstraint reliably plans for
-	// offset grippers from the ready pose. cmd/probe verified.
+	// OrientationToleranceDegs: 20. With tool-down goal orientation at
+	// BOTH anchors, cbirrt's natural joint-interpolated path lets the
+	// wrist orient drift 30-60deg from straight-down at the swing
+	// midpoint. A loose tolerance (90deg) doesn't engage; 20deg forces
+	// the wrist to stay tightly pointing down throughout the swing,
+	// producing a visibly more "controlled" path than ee_baseline. The
+	// warmup in runArmLoop puts the arm into a tool-down config first,
+	// so even tight orient tolerance plans from a feasible start state.
 	constraints := &motionplan.Constraints{
 		OrientationConstraint: []motionplan.OrientationConstraint{
-			{OrientationToleranceDegs: 90},
+			{OrientationToleranceDegs: 20},
 		},
 	}
 	return Scenario{
 		Key:         "ee_orient",
-		Description: "Same anchor swing under an OrientationConstraint — tool orientation stays within 90deg of the interpolated path orientation.",
+		Description: "OrientationConstraint(20deg) — tool stays tightly pointing down through the swing.",
 		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
 			return nil, nil
 		},
@@ -949,20 +953,19 @@ func presetEEOrient() Scenario {
 }
 
 func presetEECombined() Scenario {
-	// LinearConstraint with non-trivial orientation component: 200mm line
-	// tolerance + 45deg orientation tolerance. The combined effect is more
-	// constrained than ee_linear (orient must hold) AND more constrained
-	// than ee_orient (position must hold) — but with these specific
-	// tolerances, still plans reliably from the ready pose. cmd/probe
-	// confirmed combined_200_45 succeeds for all tested gripper z-offsets.
+	// Tight on both axes: 50mm line tolerance (matches ee_linear) +
+	// 20deg orientation tolerance (matches ee_orient). Visually shows
+	// "straight cartesian line AND tool stays down" at once — distinct
+	// from ee_linear (which lets wrist roll freely) and from ee_orient
+	// (which lets position arc).
 	constraints := &motionplan.Constraints{
 		LinearConstraint: []motionplan.LinearConstraint{
-			{LineToleranceMm: 200, OrientationToleranceDegs: 45},
+			{LineToleranceMm: 50, OrientationToleranceDegs: 20},
 		},
 	}
 	return Scenario{
 		Key:         "ee_combined",
-		Description: "Combined LinearConstraint(200mm) + 45deg orientation tolerance.",
+		Description: "Combined LinearConstraint(50mm tube) + 20deg orientation tolerance — straight line AND tool down.",
 		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
 			return nil, nil
 		},
