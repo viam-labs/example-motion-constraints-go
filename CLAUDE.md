@@ -129,8 +129,10 @@ Inherited from `example-visualizations-go`'s hard-won learnings. Violate one and
 
 ## Perf characteristics
 
-- Healthy scenarios complete in <1s per plan; budget of 6s only matters for genuinely hard problems.
-- A struggling scenario (one that always hits the plan budget) pegs a CPU core for that duration. A few struggling arms in parallel saturate the host and starve viam-server's WebRTC stream — every arm appears sluggish, not just the offending ones. See NOTES.md "Perf characteristic" for the full writeup.
+- Healthy scenarios complete in <1s per plan; budget of 3s only matters for genuinely hard problems.
+- **Plan concurrency is capped** by `max_concurrent_plans` (default 2). cbirrt spawns `NumCPU/2` CPU-bound worker goroutines per `PlanMotion` call (`armplanning/planner_options.go::defaultNumThreads`). N arms × that many workers saturates the *intra-process* Go scheduler inside viam-server. The host's kernel scheduler stays fine — viam-server gets its share of CPU — but **inside viam-server's process**, the WebRTC stream goroutines that feed the 3D viewer compete with cbirrt workers for scheduling slots. Other Viam app tabs use simpler request/response patterns and tolerate the latency; the 3D viewer needs continuous streaming + high-frequency joint polls, so it's the one that visibly degrades. The semaphore is the cheapest mitigation we control (`MP_NUM_THREADS` is read in `armplanning.init()` — `os.Setenv` from our `main()` is too late).
+- A struggling scenario (one that always hits the 3s plan budget) pegs the slot for that duration. Successful plans <1s.
+- The `stats` verb reports `planning_in_flight`, `planning_queued`, and `planning_cap`. If queued > 0 and in_flight = cap, the semaphore is biting — that's the intended behavior, not a bug.
 - Prefer "small motion + tight tolerance" over "big motion + generous budget" when designing scenarios that need to show off harder problems.
 - 16 arms running healthy scenarios is comfortable in the browser. 4–8 is the sweet spot for stable demos.
 

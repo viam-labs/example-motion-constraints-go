@@ -154,6 +154,18 @@ func (s *service) runScenario(ctx context.Context, scn Scenario, armName string)
 		"fs_ms", time.Since(fsStart).Milliseconds(),
 		"frame_count", len(fs.FrameNames()),
 	)
+	// Cap concurrent plans across all arms. cbirrt spawns NumCPU/2 worker
+	// goroutines per call; without this cap, 4 arms planning simultaneously
+	// saturate the Go runtime inside viam-server and starve the WebRTC
+	// goroutines that feed the 3D scene viewer. See acquirePlanSlot for the
+	// full rationale.
+	s.recordStage(armName, "queued")
+	release, acqErr := s.acquirePlanSlot(ctx)
+	if acqErr != nil {
+		s.recordError(armName, "plan-queue: "+acqErr.Error())
+		return addedUUIDs, fmt.Errorf("acquire plan slot: %w", acqErr)
+	}
+	defer release()
 	s.recordStage(armName, "planning")
 	planStart := time.Now()
 	plan, err := scn.Plan(ctx, r, fs, armName, obstacles)
@@ -623,16 +635,14 @@ func planSingleArmToPose(
 	// problem the planner can hang indefinitely. A hard ctx deadline
 	// kicks it out with DeadlineExceeded so the loop can move on.
 	//
-	// 6s budget. Most plans complete in <1s; the budget only matters for
-	// genuinely hard cases. Empirical observation: a STRUGGLING scenario
-	// (one that always hits the budget) costs ~budget worth of CPU per
-	// cycle, dramatically degrading viam-server's WebRTC stream and
-	// making the browser viz feel sluggish — a few timeout-prone arms
-	// have outsized impact on apparent responsiveness regardless of how
-	// many healthy arms surround them. Keep the budget short so failure
-	// is cheap; tighten tolerances or shorten swings on the scenario
-	// itself if a hard problem is genuinely needed.
-	const planBudget = 6 * time.Second
+	// 3s budget. Most plans complete in <1s; the budget only matters for
+	// genuinely hard cases. A STRUGGLING scenario costs ~budget worth of
+	// CPU per cycle. Combined with the per-service plan-concurrency cap
+	// (planSem), this puts an upper bound on how long the viam-server
+	// Go runtime can stay saturated by cbirrt workers. Tighten tolerances
+	// or shorten swings on the scenario itself if a hard problem is
+	// genuinely needed.
+	const planBudget = 3 * time.Second
 	planCtx, cancel := context.WithTimeout(ctx, planBudget)
 	defer cancel()
 	plan, meta, err := armplanning.PlanMotion(planCtx, logger, req)

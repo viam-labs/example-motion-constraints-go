@@ -53,6 +53,7 @@ The service config lives under `attributes`:
 | `preview_density` | int | `6` | Interpolated joint samples per planner waypoint pair when rendering the ghost trajectory. Higher = smoother trail at higher render cost. Set to 1 for keyframes-only. |
 | `abort_on_collision` | bool | `true` | If the trajectory's pre-flight collision check finds a hit, skip the execute step (leave the trajectory + red-tinted obstacle on screen). |
 | `tick_hz` | float | `30` | Visualization tick rate (capped at 30). |
+| `max_concurrent_plans` | int | `2` | Ceiling on simultaneous `PlanMotion` calls across all arms. The cbirrt planner spawns ~`NumCPU/2` worker goroutines per call; without a cap, N arms planning in parallel saturate viam-server's Go runtime and starve the WebRTC stream that feeds the 3D scene viewer. Lower = smoother viz; higher = more arm parallelism. |
 | `motion_service` | string | _optional_ | Name of a motion service. Currently unused — planning uses `motionplan/armplanning.PlanMotion` directly. |
 
 ### Arm-component requirement

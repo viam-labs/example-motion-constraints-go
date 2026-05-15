@@ -37,6 +37,11 @@ const (
 	DefaultTickHz          = 30.0
 	DefaultPreviewDensity  = 6
 	maxTickHz              = 30.0
+	// DefaultMaxConcurrentPlans is the default ceiling on simultaneous
+	// armplanning.PlanMotion calls. Picked to leave roughly half of a
+	// typical dev box's cores free for viam-server's gRPC handlers when
+	// cbirrt is using NumCPU/2 worker goroutines per plan.
+	DefaultMaxConcurrentPlans = 2
 	subscriberBufSize      = 256
 )
 
@@ -190,6 +195,26 @@ type service struct {
 	// pinnedScenario, if non-empty, is run exactly once before the loop
 	// resumes — set by DoCommand `run`. Legacy mode only.
 	pinnedScenario string
+
+	// planSem caps the number of concurrent armplanning.PlanMotion calls
+	// across all arms. cbirrt spawns runtime.NumCPU()/2 CPU-bound worker
+	// goroutines per PlanMotion call; with N arms planning in parallel,
+	// the Go scheduler inside viam-server gets saturated, starving the
+	// gRPC stream goroutines that feed the 3D scene viewer (other Viam
+	// app tabs aren't affected — they're request/response and tolerate
+	// scheduler latency). Bounding concurrent plans is the cheapest
+	// in-our-control mitigation (the per-plan thread count itself is set
+	// from MP_NUM_THREADS at armplanning's init time — out of reach from
+	// our main()). Buffered channel of cap MaxConcurrentPlans; acquire by
+	// sending a sentinel, release by receiving. (chan-as-semaphore is the
+	// idiomatic Go pattern for this.)
+	planSem chan struct{}
+	// planInFlight is the count of plans currently holding planSem slots.
+	// planQueued is the count waiting on the semaphore. Both surfaced via
+	// the "stats" verb so the user can directly observe whether the cap
+	// is biting.
+	planInFlight int
+	planQueued   int
 }
 
 func newService(
@@ -275,6 +300,18 @@ func (s *service) Reconfigure(
 	} else {
 		s.abortOnCollision = true
 	}
+	// (Re)build the plan-concurrency semaphore. We rebuild on every
+	// Reconfigure so a config change in MaxConcurrentPlans takes effect
+	// without a module restart. Any in-flight plans hold slots from the
+	// PRIOR semaphore — that's fine; they release into a channel nobody
+	// reads from any more (it just gets GC'd once the senders return).
+	maxPlans := cfg.MaxConcurrentPlans
+	if maxPlans <= 0 {
+		maxPlans = DefaultMaxConcurrentPlans
+	}
+	s.planSem = make(chan struct{}, maxPlans)
+	s.planInFlight = 0
+	s.planQueued = 0
 	if cfg.Loop != nil {
 		s.loop = *cfg.Loop
 	} else {
@@ -583,6 +620,41 @@ func (s *service) runArmLoop(ctx context.Context, armName, scenarioKey string) {
 		case <-time.After(time.Duration(interval * float64(time.Second))):
 		case <-s.advanceSig:
 		}
+	}
+}
+
+// acquirePlanSlot blocks until a slot is available in the plan-concurrency
+// semaphore (or the context is cancelled). Returns a release func that the
+// caller MUST invoke when the plan completes — typically via `defer release()`
+// immediately after the call. The semaphore reference is snapshotted at
+// acquire time so a Reconfigure between acquire and release doesn't break
+// pairing (the old buffered channel still accepts the release send).
+//
+// While waiting, increments planQueued; while holding, increments planInFlight.
+// Both counts are exposed by the "stats" verb.
+func (s *service) acquirePlanSlot(ctx context.Context) (release func(), err error) {
+	s.mu.Lock()
+	sem := s.planSem
+	s.planQueued++
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		s.planQueued--
+		s.mu.Unlock()
+	}()
+	select {
+	case sem <- struct{}{}:
+		s.mu.Lock()
+		s.planInFlight++
+		s.mu.Unlock()
+		return func() {
+			<-sem
+			s.mu.Lock()
+			s.planInFlight--
+			s.mu.Unlock()
+		}, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
 }
 
@@ -1025,6 +1097,9 @@ func (s *service) DoCommand(
 		sceneCount := len(s.scene)
 		subCount := len(s.subscribers)
 		animCount := len(s.animations)
+		planInFlight := s.planInFlight
+		planQueued := s.planQueued
+		planCap := cap(s.planSem)
 		s.mu.Unlock()
 		return map[string]any{
 			"phase":                 "10-parallel",
@@ -1036,6 +1111,14 @@ func (s *service) DoCommand(
 			"current_stage":         stages,
 			"current_stage_age_sec": stageAges,
 			"last_error":            errs,
+			// Plan concurrency observability. If planning_queued stays > 0
+			// and planning_in_flight is at the cap, the semaphore is biting
+			// — arms are waiting for a planning slot. Increase
+			// max_concurrent_plans to trade viz responsiveness for arm
+			// parallelism.
+			"planning_in_flight": planInFlight,
+			"planning_queued":    planQueued,
+			"planning_cap":       planCap,
 		}, nil
 
 	default:

@@ -57,6 +57,16 @@ type Config struct {
 	// ghost trajectory. Higher = smoother trail; lower = lighter scene.
 	// Default 15. Set to 1 to fall back to keyframes-only.
 	PreviewDensity int `json:"preview_density,omitempty"`
+
+	// MaxConcurrentPlans bounds how many armplanning.PlanMotion calls may
+	// be in flight at once across all arms. The cbirrt planner spawns up
+	// to runtime.NumCPU()/2 worker goroutines per call; running every arm
+	// in parallel can saturate the Go runtime inside viam-server, which
+	// starves the WebRTC goroutines feeding the 3D scene viewer. A small
+	// cap leaves scheduler headroom and keeps the viz responsive. 0 means
+	// "use default" (2). Set higher (e.g. 4) if you have many idle cores
+	// and don't care about viz smoothness.
+	MaxConcurrentPlans int `json:"max_concurrent_plans,omitempty"`
 }
 
 // Validate is called by the resource graph when the service is (re)configured.
