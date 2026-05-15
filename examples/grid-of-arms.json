@@ -30,19 +30,19 @@
     },
     {
       "name": "tip_a1", "api": "rdk:component:gripper", "model": "rdk:builtin:fake",
-      "frame": { "parent": "arm_a1", "translation": { "x": 0, "y": 0, "z": 120 } }
+      "frame": { "parent": "arm_a1", "translation": { "x": 0, "y": 0, "z": 80 } }
     },
     {
       "name": "tip_a2", "api": "rdk:component:gripper", "model": "rdk:builtin:fake",
-      "frame": { "parent": "arm_a2", "translation": { "x": 60, "y": 0, "z": 100 } }
+      "frame": { "parent": "arm_a2", "translation": { "x": 0, "y": 0, "z": 80 } }
     },
     {
       "name": "gripper_a3", "api": "rdk:component:gripper", "model": "rdk:builtin:fake",
-      "frame": { "parent": "arm_a3", "translation": { "x": 0, "y": 0, "z": 150 } }
+      "frame": { "parent": "arm_a3", "translation": { "x": 0, "y": 0, "z": 80 } }
     },
     {
       "name": "gripper_a4", "api": "rdk:component:gripper", "model": "rdk:builtin:fake",
-      "frame": { "parent": "arm_a4", "translation": { "x": 80, "y": 0, "z": 200 } }
+      "frame": { "parent": "arm_a4", "translation": { "x": 0, "y": 0, "z": 80 } }
     }
   ],
   "services": [

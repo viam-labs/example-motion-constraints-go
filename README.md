@@ -121,7 +121,11 @@ When paired via `ee_frames` with a child gripper frame, the planner solves for t
 
 ### Constraint variations and their known issues
 
-The `ee_variations` bundle puts each arm under a different constraint over the same 2-anchor swing, so you can compare them side-by-side. Each arm has a different gripper offset, declared via `ee_frames`. Known warts:
+The `ee_variations` bundle puts each arm under a different constraint over the same 2-anchor swing, so you can compare them side-by-side.
+
+**Machine-config requirement:** `ee_variations` expects all 4 arms to declare a gripper child frame with the SAME offset (default config uses `(0, 0, 80)` for all). Heterogeneous gripper offsets combined with tight constraints produce IK-reachability failures that aren't a constraint demo — they're a workspace mismatch. The `ee_only` bundle is fine with varied offsets because it has no path constraint.
+
+Known warts of each constraint type:
 
 | Arm | Constraint | What it does | Known issues |
 | --- | --- | --- | --- |
