@@ -79,7 +79,7 @@ Set `preset_set` to one of these to swap the scenario assignment on the same fou
 | Bundle | Description | Scenarios assigned to (a1, a2, a3, a4) |
 | --- | --- | --- |
 | `ee_only` (default) | End-Effector Control Frame Variations | `random_translation`, `random_rotation`, `random_translation` (gripper), `random_rotation` (gripper) |
-| `ee_variations` | EE Variations Under a Linear Constraint | `linear_constraint` × 4 — same straight-line motion on every arm, but each targets its own `ee_frames` entry. Variation comes from different gripper offsets producing visibly different wrist paths under the same EE constraint. |
+| `ee_variations` | Constraint Type Comparison | `ee_baseline` (a1, no constraint), `ee_linear` (a2, LinearConstraint), `ee_orient` (a3, OrientationConstraint), `ee_combined` (a4, both). All four run the SAME 2-anchor swing so the only visible difference is the constraint. See **Constraint variations and their known issues** below for the warts on each. |
 | `obstacle_geometry` | Obstacle Geometry Variations | `arc_over_obstacle`, `duck_under_obstacle`, `gripper_with_box`, `corridor_passthrough` |
 | `constraint_types` | Constraint and Dynamic-Obstacle Variations | `linear_constraint`, `orientation_constraint`, `dynamic_obstacle`, `single_arm_obstacle` |
 
@@ -118,6 +118,19 @@ When paired via `ee_frames` with a child gripper frame, the planner solves for t
 | `linear_constraint` | Hold the EE on a straight line between anchors with a loose tolerance. |
 | `orientation_constraint` | Keep the EE orientation within 45° while swinging between anchors. |
 | `dynamic_obstacle` | A box oscillates continuously across the workspace; the arm's planned trajectory is computed against the obstacle's pose at the moment of planning. |
+
+### Constraint variations and their known issues
+
+The `ee_variations` bundle puts each arm under a different constraint over the same 2-anchor swing, so you can compare them side-by-side. Each arm has a different gripper offset, declared via `ee_frames`. Known warts:
+
+| Arm | Constraint | What it does | Known issues |
+| --- | --- | --- | --- |
+| `arm_a1` | None (baseline) | cbirrt picks a natural path between anchors — generally a curve in cartesian space because joint-space shortest path doesn't map to cartesian-space shortest. | None — this is the reference. |
+| `arm_a2` | `LinearConstraint{LineToleranceMm: 200, OrientationToleranceDegs: 180}` | EE position stays inside a 200mm tube along the straight line between anchors. Orientation is unconstrained along the path. | Tight `LineToleranceMm` (<100mm) combined with an offset gripper frame frequently produces `cbirrt timeout` or `zero IK solutions` errors — the wrist must trace a parallel line at the gripper offset, which is hard or infeasible for some arm/gripper geometries. Trajectories also come back ~5–10× denser than unconstrained (cbirrt samples densely to verify the constraint), which is why the module caps preview-ghost emissions via `max_preview_ghosts`. |
+| `arm_a3` | `OrientationConstraint{OrientationToleranceDegs: 45}` | EE orientation stays within 45° of the interpolated path orientation. Position is free to take any path between the anchors. | Tight orientation tolerance (<30°) interacts badly with start/end orientation mismatches — if the home pose's wrist orientation differs much from what's natural at the goal, cbirrt cannot find a path that smoothly interpolates and stays within tolerance. Identity-orientation goals are particularly unreliable with offset grippers (same IK-reachability issue as Linear). |
+| `arm_a4` | Combined: `LinearConstraint{200mm, 30deg}` | Both: position inside a 200mm tube AND orientation within 30° along the path. | Hardest of the four. Multiplicative restriction on feasible joint configurations. Frequently fails when either individual constraint is borderline. Showcases that constraint stacking is rarely additive in difficulty — it's multiplicative. Watch for `cbirrt timeout` in `stats` `last_error`. |
+
+The pedagogical pattern: a1 → a2 → a3 → a4 goes from "easy to plan, doesn't show much" to "shows a lot, often fails." That's not a bug — it's the actual trade-off of using constraints in production motion planning.
 
 ### Coordinated and progressive
 

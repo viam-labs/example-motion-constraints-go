@@ -62,6 +62,18 @@ func presetByKey(key string) *Scenario {
 	case "random_rotation_linear":
 		s := presetRandomRotationLinear()
 		return &s
+	case "ee_baseline":
+		s := presetEEBaseline()
+		return &s
+	case "ee_linear":
+		s := presetEELinear()
+		return &s
+	case "ee_orient":
+		s := presetEEOrient()
+		return &s
+	case "ee_combined":
+		s := presetEECombined()
+		return &s
 	default:
 		return nil
 	}
@@ -838,5 +850,88 @@ func alternateBetweenAnchors(
 			return nil, err
 		}
 		return plan, nil
+	}
+}
+
+// ---- ee_variations bundle (constraint comparison) --------------------------
+//
+// Four scenarios that all run the SAME 2-anchor swing between
+// arm-local (450, ±200, 450), so the only visible difference is the
+// constraint type. Designed for direct side-by-side pedagogical
+// comparison. Anchors are intentionally in the "safe" region of ur5e
+// workspace where identity-orientation IK succeeds for both wrist-EE
+// and gripper-EE plans (same X/Y range as the random_translation
+// waypoints, which are empirically reachable).
+//
+// Constraint tolerances are loose enough that cbirrt converges quickly:
+//   - LinearConstraint: 200mm line tolerance, 180deg orient (effectively
+//     position-only)
+//   - OrientationConstraint: 45deg (visibly locks tool orientation)
+//   - Combined: 200mm position + 30deg orient (the hardest of the four;
+//     pedagogically useful — sometimes fails, see README for the caveat)
+//
+// See README "Constraint variations and their known issues" for the
+// warts on each constraint type.
+var (
+	eeAnchorA = r3.Vector{X: 450, Y: 200, Z: 450}
+	eeAnchorB = r3.Vector{X: 450, Y: -200, Z: 450}
+)
+
+func presetEEBaseline() Scenario {
+	return Scenario{
+		Key:         "ee_baseline",
+		Description: "Same anchor swing, no constraint — the natural cbirrt path.",
+		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
+			return nil, nil
+		},
+		Plan: alternateBetweenAnchors("ee_baseline", eeAnchorA, eeAnchorB, nil, nil),
+	}
+}
+
+func presetEELinear() Scenario {
+	constraints := &motionplan.Constraints{
+		LinearConstraint: []motionplan.LinearConstraint{
+			{LineToleranceMm: 200, OrientationToleranceDegs: 180},
+		},
+	}
+	return Scenario{
+		Key:         "ee_linear",
+		Description: "Same anchor swing under a LinearConstraint — EE follows a straight cartesian line.",
+		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
+			return nil, nil
+		},
+		Plan: alternateBetweenAnchors("ee_linear", eeAnchorA, eeAnchorB, constraints, nil),
+	}
+}
+
+func presetEEOrient() Scenario {
+	constraints := &motionplan.Constraints{
+		OrientationConstraint: []motionplan.OrientationConstraint{
+			{OrientationToleranceDegs: 45},
+		},
+	}
+	return Scenario{
+		Key:         "ee_orient",
+		Description: "Same anchor swing under an OrientationConstraint — tool orientation stays locked within 45deg.",
+		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
+			return nil, nil
+		},
+		Plan: alternateBetweenAnchors("ee_orient", eeAnchorA, eeAnchorB, constraints, nil),
+	}
+}
+
+func presetEECombined() Scenario {
+	constraints := &motionplan.Constraints{
+		LinearConstraint: []motionplan.LinearConstraint{
+			{LineToleranceMm: 200, OrientationToleranceDegs: 30},
+		},
+	}
+	return Scenario{
+		Key:         "ee_combined",
+		Description: "Same anchor swing under combined Linear + Orient constraints — the hardest of the four; may fail.",
+		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
+			return nil, nil
+		},
+		Plan: alternateBetweenAnchors("ee_combined", eeAnchorA, eeAnchorB, constraints, nil),
 	}
 }

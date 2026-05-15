@@ -78,18 +78,16 @@ var PresetBundles = map[string]map[string]string{
 	// against the orientation interpolation until the plan budget
 	// fires, both of which starve the viz.
 	"ee_variations": {
-		// All 4 arms run random_translation_linear: the same 7 varied
-		// waypoints random_translation uses (proven to be IK-reachable
-		// for both wrist-EE and gripper-EE plans, with identity goal
-		// orientation) but with a loose LinearConstraint layered on top.
-		// "Variations" are the per-arm EE control frames (configured via
-		// ee_frames in machine config) — each arm's gripper offset traces
-		// a visibly different wrist path while every EE traverses
-		// straighter paths than it would unconstrained.
-		"arm_a1": "random_translation_linear",
-		"arm_a2": "random_translation_linear",
-		"arm_a3": "random_translation_linear",
-		"arm_a4": "random_translation_linear",
+		// Constraint-variation comparison: all 4 arms run the SAME
+		// 2-anchor swing (between (450, ±200, 450) arm-local), so the
+		// ONLY visible difference is the constraint each one is under.
+		// a1 is the baseline (no constraint) so you can see how each
+		// constraint changes the same motion. See README "Constraint
+		// variations and their known issues" for the wart on each.
+		"arm_a1": "ee_baseline", // no constraint — natural cbirrt path
+		"arm_a2": "ee_linear",   // LinearConstraint — straight cartesian line
+		"arm_a3": "ee_orient",   // OrientationConstraint — tool stays locked
+		"arm_a4": "ee_combined", // LinearConstraint + tight orientation tol — hardest
 	},
 	// Obstacle-geometry pedagogy: arc-over, duck-under, gripper-with-
 	// box, corridor pass-through. gripper_with_box assumes arm_a3 has

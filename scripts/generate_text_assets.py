@@ -45,6 +45,12 @@ LABELS = [
     "Arm Only\nRotation\nConstraint: Linear\nCollidables: Self Only",
     "Arm + Gripper\nTranslation\nConstraint: Linear\nCollidables: Self + Tool",
     "Arm + Gripper\nRotation\nConstraint: Linear\nCollidables: Self + Tool",
+    # ee_variations bundle: same anchor swing, four constraint variants
+    # for direct side-by-side comparison.
+    "Arm + Gripper\nBaseline\nConstraint: None\nCollidables: Self + Tool",
+    "Arm + Gripper\nLinear Only\nConstraint: Linear\nCollidables: Self + Tool",
+    "Arm + Gripper\nOrient Only\nConstraint: Orientation\nCollidables: Self + Tool",
+    "Arm + Gripper\nCombined\nConstraint: Lin + Orient\nCollidables: Self + Tool",
 ]
 
 

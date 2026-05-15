@@ -102,6 +102,14 @@ func labelTextForArm(scenarioKey string, hasGripper bool) string {
 			return "Arm + Gripper\nRotation\nConstraint: Linear\nCollidables: Self + Tool"
 		}
 		return "Arm Only\nRotation\nConstraint: Linear\nCollidables: Self Only"
+	case "ee_baseline":
+		return "Arm + Gripper\nBaseline\nConstraint: None\nCollidables: Self + Tool"
+	case "ee_linear":
+		return "Arm + Gripper\nLinear Only\nConstraint: Linear\nCollidables: Self + Tool"
+	case "ee_orient":
+		return "Arm + Gripper\nOrient Only\nConstraint: Orientation\nCollidables: Self + Tool"
+	case "ee_combined":
+		return "Arm + Gripper\nCombined\nConstraint: Lin + Orient\nCollidables: Self + Tool"
 	}
 	// Fallback: use the raw key.
 	return strings.ReplaceAll(scenarioKey, "_", " ")
