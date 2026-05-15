@@ -80,22 +80,20 @@ var PresetBundles = map[string]map[string]string{
 	// fires, both of which starve the viz.
 	"ee_variations": {
 		// Constraint-variation comparison: all 4 arms run the SAME
-		// 2-anchor swing (Y±100/Z=450 arm-local), so the only visible
-		// difference is each arm's constraint. Empirically determined
-		// via DoCommand probe_constraints (see service.go::probeConstraints):
-		// LinearConstraint and Combined variants are arm-position-sensitive
-		// in the runtime — they succeed for arms at +X +Y or -X -Y world
-		// corners but fail for the diagonal pair, regardless of constraint
-		// tolerance. OrientationConstraint at 60deg+ works for all 4 arms.
-		// So this bundle uses OrientationConstraint with a tightness
-		// gradient (none → 120° → 90° → 60°) to give a clean comparison
-		// where every arm completes its cycle. The other constraint types
-		// (Linear, Combined) live in `constraint_types` for arms where
-		// they're known to work.
-		"arm_a1": "ee_baseline",   // no constraint — natural cbirrt path
-		"arm_a2": "ee_orient_120", // OrientationConstraint 120° — loose orient lock
-		"arm_a3": "ee_orient",     // OrientationConstraint 90° — moderate orient lock
-		"arm_a4": "ee_orient_60",  // OrientationConstraint 60° — tight orient lock
+		// 2-anchor swing (Y±100/Z=450 arm-local) under DIFFERENT
+		// constraint types. The differences are visible because Linear
+		// and Combined force a notably different path than cbirrt's
+		// natural arc; OrientationConstraint with tight tolerance
+		// constrains the wrist's roll.
+		//
+		// Each ee_* scenario triggers a startup warmup (see
+		// scenarioNeedsWarmup) — one unconstrained plan to the anchor
+		// before the constrained loop — so arms that can't break through
+		// tight constraints from the ready pose get unstuck first.
+		"arm_a1": "ee_baseline", // no constraint — reference natural path
+		"arm_a2": "ee_linear",   // LinearConstraint — forces straight cartesian line
+		"arm_a3": "ee_orient",   // OrientationConstraint 90° — wrist orient locked
+		"arm_a4": "ee_combined", // LinearConstraint + 45° orient — both at once
 	},
 	// Obstacle-geometry pedagogy: arc-over, duck-under, gripper-with-
 	// box, corridor pass-through. gripper_with_box assumes arm_a3 has
@@ -630,6 +628,15 @@ func (s *service) runArmLoop(ctx context.Context, armName, scenarioKey string) {
 				}
 			}
 		}
+	}
+	// Warmup for constraint-based ee_ scenarios: an unconstrained plan
+	// to the bundle's anchor A, executed in full, so the arm settles
+	// into a goal-friendly joint state before the constrained scenario
+	// begins. Empirically (see probe_constraints), arms stuck at the
+	// ready pose can't break through tight constraints on the first
+	// plan, but a single unconstrained plan first unlocks them.
+	if scenarioNeedsWarmup(scenarioKey) {
+		s.warmupArm(ctx, armName)
 	}
 	for {
 		if ctx.Err() != nil {
@@ -1200,6 +1207,66 @@ func (s *service) DoCommand(
 	default:
 		return nil, fmt.Errorf("unrecognized command %q; try one of: list, status, pause, resume, clear, run, next, stats, stack_dump, probe_constraints", verb)
 	}
+}
+
+// scenarioNeedsWarmup reports whether the scenario benefits from an
+// initial unconstrained plan to the ee anchor before the constrained
+// scenario loop starts. See warmupArm for the why.
+func scenarioNeedsWarmup(scenarioKey string) bool {
+	switch scenarioKey {
+	case "ee_linear", "ee_orient", "ee_orient_60", "ee_orient_120", "ee_combined":
+		return true
+	}
+	return false
+}
+
+// warmupArm runs a single UNCONSTRAINED plan from the arm's current
+// (ready-pose) state to ee_variations' anchor A and executes it. This
+// puts the arm in a goal-friendly joint state so the subsequent
+// constrained scenario can break through — empirically, arms stuck at
+// ready pose can't satisfy LinearConstraint/Combined on the first
+// plan, but the state after an unconstrained plan to the same anchor
+// unlocks them.
+//
+// Best-effort: failures are logged and the loop proceeds anyway.
+func (s *service) warmupArm(ctx context.Context, armName string) {
+	s.mu.Lock()
+	r := s.deps
+	s.mu.Unlock()
+	if r == nil {
+		return
+	}
+	armRes, ok := r.arms[armName]
+	if !ok {
+		return
+	}
+	fs, err := buildFrameSystem(ctx, r)
+	if err != nil {
+		s.logger.Warnw("warmup: build frame system failed", "arm", armName, "err", err)
+		return
+	}
+	goal := applyArmOffset(r.armBase(armName), eeAnchorA)
+	warmupCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	plan, err := planSingleArmToPose(warmupCtx, r, fs, armName, goal, nil, nil)
+	if err != nil {
+		s.logger.Warnw("warmup: plan failed (will continue)", "arm", armName, "err", err)
+		return
+	}
+	armInputs, err := plan.Trajectory().GetFrameInputs(armName)
+	if err != nil {
+		s.logger.Warnw("warmup: extract inputs failed", "arm", armName, "err", err)
+		return
+	}
+	if len(armInputs) <= 1 {
+		s.logger.Infow("warmup: plan trivial (already at anchor)", "arm", armName)
+		return
+	}
+	if err := armRes.MoveThroughJointPositions(ctx, armInputs[1:], nil, nil); err != nil {
+		s.logger.Warnw("warmup: execute failed", "arm", armName, "err", err)
+		return
+	}
+	s.logger.Infow("warmup: complete", "arm", armName, "steps", len(armInputs))
 }
 
 // scenarioNeedsHome reports whether a preset's typical scene includes
