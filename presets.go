@@ -455,45 +455,33 @@ func presetRandomRotation() Scenario {
 
 // ---- random_translation_linear ---------------------------------------------
 
-// presetRandomTranslationLinear visits the same waypoint sequence as
-// random_translation but adds a LinearConstraint so each hop traces a
-// straight cartesian line. Pair with the same EE-frame override to see
-// gripper-vs-wrist trail differences under the constraint.
+// presetRandomTranslationLinear alternates between two nearby anchors with
+// a LinearConstraint so each hop traces a straight cartesian line. Pair
+// with an EE-frame override to see gripper-vs-wrist trail differences.
+//
+// IMPORTANT: this used to walk the same 7-waypoint workspace-spanning set
+// as random_translation, which dragged the whole demo down — each long
+// linear-constrained hop forced cbirrt to project random samples back onto
+// the constraint manifold via IK, blowing past the plan budget on most
+// cycles. Same lesson as presetLinearConstraint: keep the swing short and
+// the tolerances loose. ~300mm swing, 200mm line tolerance, 90deg
+// orientation tolerance — solves in well under a second so a1/a3 don't
+// dominate the host while a2/a4 try to run.
 func presetRandomTranslationLinear() Scenario {
-	waypoints := []r3.Vector{
-		{X: 500, Y: 250, Z: 400},
-		{X: 350, Y: -250, Z: 550},
-		{X: 600, Y: 0, Z: 300},
-		{X: 400, Y: 200, Z: 500},
-		{X: 500, Y: -200, Z: 350},
-		{X: 450, Y: 100, Z: 450},
-		{X: 550, Y: -100, Z: 500},
-	}
+	anchorA := r3.Vector{X: 500, Y: 150, Z: 400}
+	anchorB := r3.Vector{X: 500, Y: -150, Z: 400}
 	constraints := &motionplan.Constraints{
 		LinearConstraint: []motionplan.LinearConstraint{
-			{LineToleranceMm: 100, OrientationToleranceDegs: 90},
+			{LineToleranceMm: 200, OrientationToleranceDegs: 90},
 		},
 	}
-	var counter int64
-
 	return Scenario{
 		Key:         "random_translation_linear",
-		Description: "Same as random_translation but each hop is forced to a straight cartesian line.",
+		Description: "Alternates between two nearby anchors under a LinearConstraint — straight-line cartesian path.",
 		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
 			return nil, nil
 		},
-		Plan: func(
-			ctx context.Context,
-			r *resolved,
-			fs *referenceframe.FrameSystem,
-			armName string,
-			obstacles []scenarioObstacle,
-		) (motionplan.Plan, error) {
-			idx := int(atomic.AddInt64(&counter, 1)-1) % len(waypoints)
-			off := waypoints[idx]
-			goal := applyArmOffset(r.armBase(armName), off)
-			return planSingleArmToPose(ctx, r, fs, armName, goal, obstacles, constraints)
-		},
+		Plan: alternateBetweenAnchors("random_translation_linear", anchorA, anchorB, constraints),
 	}
 }
 
