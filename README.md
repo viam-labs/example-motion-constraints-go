@@ -71,15 +71,16 @@ Use `rdk:builtin:simulated` (not `:fake`) with `"simulate-time": true`. The fake
 
 ## Preset bundles
 
-Set `preset_set` to one of these to activate a canonical (arm → scenario) mapping. Arms in the bundle that aren't declared in the machine config are silently skipped.
+Set `preset_set` to one of these to swap the scenario assignment on the same four `arm_a1..a4` slots. Every bundle is exactly four arms so the CPU + browser cost stays predictable across swaps.
 
-| Bundle | Description | Arm names |
+| Bundle | Description | Scenarios assigned to (a1, a2, a3, a4) |
 | --- | --- | --- |
-| `ee_only` (default) | End-Effector Control Frame Variations | `arm_a1..a4` |
-| `ee_variations` | EE Control Frames + Linear Constraint Comparison | `arm_a1..a4`, `arm_ab1..ab4` |
-| `obstacle_geometry` | Obstacle Geometry Variations | `arm_b1..b4` |
-| `constraint_types` | Constraint and Dynamic-Obstacle Variations | `arm_c1..c4` |
-| `all` | All scenarios (heaviest — 16 arms) | every arm above |
+| `ee_only` (default) | End-Effector Control Frame Variations | `random_translation`, `random_rotation`, `random_translation` (gripper), `random_rotation` (gripper) |
+| `ee_variations` | EE Variations Under a Linear Constraint | `random_translation_linear`, `random_rotation_linear`, `random_translation_linear` (gripper), `random_rotation_linear` (gripper) |
+| `obstacle_geometry` | Obstacle Geometry Variations | `arc_over_obstacle`, `duck_under_obstacle`, `gripper_with_box`, `corridor_passthrough` |
+| `constraint_types` | Constraint and Dynamic-Obstacle Variations | `linear_constraint`, `orientation_constraint`, `dynamic_obstacle`, `single_arm_obstacle` |
+
+Bundles assume the canonical layout: `arm_a1` and `arm_a2` are gripperless; `arm_a3` and `arm_a4` have offset grippers declared in `ee_frames`. Scenarios in `a3`/`a4` slots that target a gripper tip work because of that. Arms in the bundle that aren't declared in the machine config are silently skipped.
 
 ## Scenarios
 

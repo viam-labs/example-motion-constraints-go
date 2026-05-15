@@ -41,57 +41,48 @@ const (
 )
 
 // PresetBundles maps a friendly bundle name to a canonical
-// (arm-name -> preset-key) mapping. Used when the service config sets
-// the `preset_set` attribute. Each bundle assumes a specific arm-naming
-// convention in the machine config (arm_a1..a4 for row A, etc.); arms
-// missing from the machine config are silently skipped.
+// (arm-name -> preset-key) mapping. Every bundle is exactly four arms
+// — always `arm_a1..a4` — so switching bundles reuses the same machine
+// config and the CPU/render cost stays predictable. Earlier wider
+// bundles (rows AB/B/C, "all") proved heavier than the renderer could
+// keep up with; the 4-arm constraint keeps every preset_set responsive.
+//
+// In each bundle: arm_a1 + arm_a2 are gripperless; arm_a3 + arm_a4
+// expect offset grippers configured via the `ee_frames` attribute,
+// matching the examples/grid-of-arms.json layout.
 var PresetBundles = map[string]map[string]string{
-	// row A only: four arms demonstrating EE-control-frame variations.
+	// EE control-frame variations: position-varying vs orientation-
+	// varying, with vs without an offset gripper.
 	"ee_only": {
 		"arm_a1": "random_translation",
 		"arm_a2": "random_rotation",
 		"arm_a3": "random_translation",
 		"arm_a4": "random_rotation",
 	},
-	// rows A + AB: the same four EE variations plus linear-constraint
-	// counterparts for side-by-side comparison. This is the default —
-	// the most pedagogically self-contained subset that exercises the
-	// task-space lever without thrashing CPU on 16 simultaneous plans.
+	// Same task-space variations as ee_only but each motion is forced
+	// onto a straight cartesian line via LinearConstraint.
 	"ee_variations": {
-		"arm_a1":  "random_translation",
-		"arm_a2":  "random_rotation",
-		"arm_a3":  "random_translation",
-		"arm_a4":  "random_rotation",
-		"arm_ab1": "random_translation_linear",
-		"arm_ab2": "random_rotation_linear",
-		"arm_ab3": "random_translation_linear",
-		"arm_ab4": "random_rotation_linear",
+		"arm_a1": "random_translation_linear",
+		"arm_a2": "random_rotation_linear",
+		"arm_a3": "random_translation_linear",
+		"arm_a4": "random_rotation_linear",
 	},
-	// row B: obstacle-geometry variations (arc over / duck under /
-	// gripper-with-box / corridor pass-through).
+	// Obstacle-geometry pedagogy: arc-over, duck-under, gripper-with-
+	// box, corridor pass-through. gripper_with_box assumes arm_a3 has
+	// a gripper configured (preferably one whose frame.geometry adds
+	// the long tool collision body).
 	"obstacle_geometry": {
-		"arm_b1": "arc_over_obstacle",
-		"arm_b2": "duck_under_obstacle",
-		"arm_b3": "gripper_with_box",
-		"arm_b4": "corridor_passthrough",
+		"arm_a1": "arc_over_obstacle",
+		"arm_a2": "duck_under_obstacle",
+		"arm_a3": "gripper_with_box",
+		"arm_a4": "corridor_passthrough",
 	},
-	// row C: constraint and dynamic-obstacle variations.
+	// Constraint and dynamic-obstacle variations.
 	"constraint_types": {
-		"arm_c1": "linear_constraint",
-		"arm_c2": "orientation_constraint",
-		"arm_c3": "dynamic_obstacle",
-		"arm_c4": "dynamic_obstacle",
-	},
-	// every preset across every row. Heavy: 16 simultaneous plans.
-	"all": {
-		"arm_a1": "random_translation", "arm_a2": "random_rotation",
-		"arm_a3": "random_translation", "arm_a4": "random_rotation",
-		"arm_ab1": "random_translation_linear", "arm_ab2": "random_rotation_linear",
-		"arm_ab3": "random_translation_linear", "arm_ab4": "random_rotation_linear",
-		"arm_b1": "arc_over_obstacle", "arm_b2": "duck_under_obstacle",
-		"arm_b3": "gripper_with_box", "arm_b4": "corridor_passthrough",
-		"arm_c1": "linear_constraint", "arm_c2": "orientation_constraint",
-		"arm_c3": "dynamic_obstacle", "arm_c4": "dynamic_obstacle",
+		"arm_a1": "linear_constraint",
+		"arm_a2": "orientation_constraint",
+		"arm_a3": "dynamic_obstacle",
+		"arm_a4": "single_arm_obstacle",
 	},
 }
 
@@ -106,10 +97,9 @@ const DefaultPresetSet = "ee_only"
 // which row a given preset belongs to.
 var RowDescriptions = map[string]string{
 	"ee_only":           "End-Effector Control Frame Variations",
-	"ee_variations":     "EE Control Frames + Linear Constraint Comparison",
+	"ee_variations":     "EE Variations Under a Linear Constraint",
 	"obstacle_geometry": "Obstacle Geometry Variations",
 	"constraint_types":  "Constraint and Dynamic-Obstacle Variations",
-	"all":               "All Variations (heaviest)",
 }
 
 var builtinPresets = []string{
