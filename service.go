@@ -80,15 +80,22 @@ var PresetBundles = map[string]map[string]string{
 	// fires, both of which starve the viz.
 	"ee_variations": {
 		// Constraint-variation comparison: all 4 arms run the SAME
-		// 2-anchor swing (between (450, ±200, 450) arm-local), so the
-		// ONLY visible difference is the constraint each one is under.
-		// a1 is the baseline (no constraint) so you can see how each
-		// constraint changes the same motion. See README "Constraint
-		// variations and their known issues" for the wart on each.
-		"arm_a1": "ee_baseline", // no constraint — natural cbirrt path
-		"arm_a2": "ee_linear",   // LinearConstraint — straight cartesian line
-		"arm_a3": "ee_orient",   // OrientationConstraint — tool stays locked
-		"arm_a4": "ee_combined", // LinearConstraint + tight orientation tol — hardest
+		// 2-anchor swing (Y±100/Z=450 arm-local), so the only visible
+		// difference is each arm's constraint. Empirically determined
+		// via DoCommand probe_constraints (see service.go::probeConstraints):
+		// LinearConstraint and Combined variants are arm-position-sensitive
+		// in the runtime — they succeed for arms at +X +Y or -X -Y world
+		// corners but fail for the diagonal pair, regardless of constraint
+		// tolerance. OrientationConstraint at 60deg+ works for all 4 arms.
+		// So this bundle uses OrientationConstraint with a tightness
+		// gradient (none → 120° → 90° → 60°) to give a clean comparison
+		// where every arm completes its cycle. The other constraint types
+		// (Linear, Combined) live in `constraint_types` for arms where
+		// they're known to work.
+		"arm_a1": "ee_baseline",   // no constraint — natural cbirrt path
+		"arm_a2": "ee_orient_120", // OrientationConstraint 120° — loose orient lock
+		"arm_a3": "ee_orient",     // OrientationConstraint 90° — moderate orient lock
+		"arm_a4": "ee_orient_60",  // OrientationConstraint 60° — tight orient lock
 	},
 	// Obstacle-geometry pedagogy: arc-over, duck-under, gripper-with-
 	// box, corridor pass-through. gripper_with_box assumes arm_a3 has

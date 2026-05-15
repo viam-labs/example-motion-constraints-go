@@ -74,6 +74,12 @@ func presetByKey(key string) *Scenario {
 	case "ee_combined":
 		s := presetEECombined()
 		return &s
+	case "ee_orient_60":
+		s := presetEEOrient60()
+		return &s
+	case "ee_orient_120":
+		s := presetEEOrient120()
+		return &s
 	default:
 		return nil
 	}
@@ -955,5 +961,37 @@ func presetEECombined() Scenario {
 			return nil, nil
 		},
 		Plan: alternateBetweenAnchors("ee_combined", eeAnchorA, eeAnchorB, constraints, nil),
+	}
+}
+
+func presetEEOrient60() Scenario {
+	constraints := &motionplan.Constraints{
+		OrientationConstraint: []motionplan.OrientationConstraint{
+			{OrientationToleranceDegs: 60},
+		},
+	}
+	return Scenario{
+		Key:         "ee_orient_60",
+		Description: "Same anchor swing under tight OrientationConstraint(60deg) — pedagogically the tightest orient that still solves reliably for offset grippers.",
+		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
+			return nil, nil
+		},
+		Plan: alternateBetweenAnchors("ee_orient_60", eeAnchorA, eeAnchorB, constraints, nil),
+	}
+}
+
+func presetEEOrient120() Scenario {
+	constraints := &motionplan.Constraints{
+		OrientationConstraint: []motionplan.OrientationConstraint{
+			{OrientationToleranceDegs: 120},
+		},
+	}
+	return Scenario{
+		Key:         "ee_orient_120",
+		Description: "Same anchor swing under loose OrientationConstraint(120deg).",
+		Setup: func(ctx context.Context, r *resolved, armName string) ([]scenarioObstacle, error) {
+			return nil, nil
+		},
+		Plan: alternateBetweenAnchors("ee_orient_120", eeAnchorA, eeAnchorB, constraints, nil),
 	}
 }

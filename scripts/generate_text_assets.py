@@ -51,6 +51,8 @@ LABELS = [
     "Arm + Gripper\nLinear Only\nConstraint: Linear\nCollidables: Self + Tool",
     "Arm + Gripper\nOrient Only\nConstraint: Orientation\nCollidables: Self + Tool",
     "Arm + Gripper\nCombined\nConstraint: Lin + Orient\nCollidables: Self + Tool",
+    "Arm + Gripper\nOrient 60\nConstraint: Orient 60deg\nCollidables: Self + Tool",
+    "Arm + Gripper\nOrient 120\nConstraint: Orient 120deg\nCollidables: Self + Tool",
 ]
 
 
