@@ -634,26 +634,20 @@ func planSingleArmToPose(
 	for _, ob := range obstacles {
 		geomList = append(geomList, ob.Geom)
 	}
-	var worldState *referenceframe.WorldState
+	var obstaclesInWorldFrame *referenceframe.GeometriesInFrame
 	if len(geomList) > 0 {
-		gif := referenceframe.NewGeometriesInFrame(referenceframe.World, geomList)
-		worldState, err = referenceframe.NewWorldState([]*referenceframe.GeometriesInFrame{gif}, nil)
-		if err != nil {
-			return nil, fmt.Errorf("worldstate: %w", err)
-		}
-	} else {
-		worldState, _ = referenceframe.NewWorldState(nil, nil)
+		obstaclesInWorldFrame = referenceframe.NewGeometriesInFrame(referenceframe.World, geomList)
 	}
 
 	goalPoses := referenceframe.FrameSystemPoses{
 		goalFrame: referenceframe.NewPoseInFrame(referenceframe.World, goal),
 	}
 	req := &armplanning.PlanRequest{
-		FrameSystem: fs,
-		Goals:       []*armplanning.PlanState{armplanning.NewPlanState(goalPoses, nil)},
-		StartState:  armplanning.NewPlanState(nil, startInputs),
-		WorldState:  worldState,
-		Constraints: constraints,
+		FrameSystem:           fs,
+		Goals:                 []*armplanning.PlanState{armplanning.NewPlanState(goalPoses, nil)},
+		StartState:            armplanning.NewPlanState(nil, startInputs),
+		ObstaclesInWorldFrame: obstaclesInWorldFrame,
+		Constraints:           constraints,
 	}
 	logger := r.logger
 	if logger == nil {
