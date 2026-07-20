@@ -118,16 +118,10 @@ func run() error {
 	goalState := armplanning.NewPlanState(goalPoses, nil)
 
 	// Plan with no extra WorldState first — purely the framesystem.
-	worldState, err := referenceframe.NewWorldState(nil, nil)
-	if err != nil {
-		return fmt.Errorf("worldstate: %w", err)
-	}
-
 	req := &armplanning.PlanRequest{
 		FrameSystem: fs,
 		Goals:       []*armplanning.PlanState{goalState},
 		StartState:  startState,
-		WorldState:  worldState,
 		Constraints: &motionplan.Constraints{},
 	}
 
@@ -204,16 +198,12 @@ func run() error {
 		g.SetLabel(fmt.Sprintf("arm_b_static_%d_%s", i, g.Label()))
 	}
 	bObstacles := referenceframe.NewGeometriesInFrame(referenceframe.World, bWorld)
-	worldStateB, err := referenceframe.NewWorldState([]*referenceframe.GeometriesInFrame{bObstacles}, nil)
-	if err != nil {
-		return fmt.Errorf("worldstate with B obstacles: %w", err)
-	}
 	reqB := &armplanning.PlanRequest{
-		FrameSystem: fs,
-		Goals:       []*armplanning.PlanState{goalState},
-		StartState:  startState,
-		WorldState:  worldStateB,
-		Constraints: &motionplan.Constraints{},
+		FrameSystem:           fs,
+		Goals:                 []*armplanning.PlanState{goalState},
+		StartState:            startState,
+		ObstaclesInWorldFrame: bObstacles,
+		Constraints:           &motionplan.Constraints{},
 	}
 	planB, _, errB := armplanning.PlanMotion(ctx, logger, reqB)
 	if errB != nil {

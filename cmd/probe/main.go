@@ -247,12 +247,10 @@ func tryCombo(ctx context.Context, logger logging.Logger, gripperZ int, ap ancho
 	}
 	goalState := armplanning.NewPlanState(goalPoses, nil)
 
-	worldState, _ := referenceframe.NewWorldState(nil, nil)
 	req := &armplanning.PlanRequest{
 		FrameSystem: fs,
 		Goals:       []*armplanning.PlanState{goalState},
 		StartState:  startState,
-		WorldState:  worldState,
 		Constraints: cs.make(),
 	}
 	_, _, err = armplanning.PlanMotion(planCtx, logger, req)
