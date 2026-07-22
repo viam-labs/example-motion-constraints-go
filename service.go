@@ -34,11 +34,11 @@ import (
 var Model = resource.NewModel("viam", "example-motion-constraints-go", "motion-playground")
 
 const (
-	DefaultIntervalS       = 5.0
-	DefaultPreviewS        = 1.0
-	DefaultTickHz          = 30.0
-	DefaultPreviewDensity  = 2
-	maxTickHz              = 30.0
+	DefaultIntervalS      = 5.0
+	DefaultPreviewS       = 1.0
+	DefaultTickHz         = 30.0
+	DefaultPreviewDensity = 2
+	maxTickHz             = 30.0
 	// DefaultMaxConcurrentPlans is the default ceiling on simultaneous
 	// armplanning.PlanMotion calls. Picked to leave roughly half of a
 	// typical dev box's cores free for viam-server's gRPC handlers when
@@ -50,7 +50,7 @@ const (
 	// where every ghost is on a straight line), small enough that the
 	// emit burst doesn't stall the viewer's JS main thread.
 	DefaultMaxPreviewGhosts = 24
-	subscriberBufSize      = 256
+	subscriberBufSize       = 256
 )
 
 // PresetBundles maps a friendly bundle name to a canonical
@@ -191,28 +191,28 @@ type service struct {
 	deps *resolved
 
 	// Cached config values.
-	armNames      []string
-	motionService string
-	tickHz             float64
-	intervalS          float64
-	previewS           float64
-	previewDensity     int
-	abortOnCollision   bool
+	armNames             []string
+	motionService        string
+	tickHz               float64
+	intervalS            float64
+	previewS             float64
+	previewDensity       int
+	abortOnCollision     bool
 	disablePreviewGhosts bool
-	maxPreviewGhosts   int
-	loop          bool
-	paused        bool
-	presets       []string
+	maxPreviewGhosts     int
+	loop                 bool
+	paused               bool
+	presets              []string
 	// armScenarios is the parallel-mode binding (arm name -> preset key).
 	// Empty in legacy sequential mode.
 	armScenarios map[string]string
 
 	// Diagnostic state. Updated under s.mu by runScenario; surfaced by
 	// the "stats" DoCommand verb.
-	cycleCount     map[string]int64
-	lastStageByArm map[string]string
+	cycleCount       map[string]int64
+	lastStageByArm   map[string]string
 	lastStageAtByArm map[string]time.Time
-	lastErrorByArm map[string]string
+	lastErrorByArm   map[string]string
 	// pinnedScenario, if non-empty, is run exactly once before the loop
 	// resumes — set by DoCommand `run`. Legacy mode only.
 	pinnedScenario string
@@ -1189,12 +1189,12 @@ func (s *service) DoCommand(
 		buf := make([]byte, 4*1024*1024)
 		n := runtime.Stack(buf, true)
 		return map[string]any{
-			"goroutines":   runtime.NumGoroutine(),
-			"stack_bytes":  n,
-			"stack":        string(buf[:n]),
-			"mp_threads":   os.Getenv("MP_NUM_THREADS"),
-			"num_cpu":      runtime.NumCPU(),
-			"gomaxprocs":   runtime.GOMAXPROCS(0),
+			"goroutines":  runtime.NumGoroutine(),
+			"stack_bytes": n,
+			"stack":       string(buf[:n]),
+			"mp_threads":  os.Getenv("MP_NUM_THREADS"),
+			"num_cpu":     runtime.NumCPU(),
+			"gomaxprocs":  runtime.GOMAXPROCS(0),
 		}, nil
 
 	case "probe_constraints":
