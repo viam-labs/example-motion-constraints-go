@@ -880,16 +880,16 @@ func alternateBetweenAnchors(
 // warts on each constraint type.
 // 800mm Y-swing at LOW Z, with tool-down orientation. Three things had
 // to come together:
-//   1. Bigger swing so the natural cbirrt arc is visibly different from
-//      LinearConstraint's forced straight line. At Y±100mm the arc is
-//      almost imperceptible; at Y±400mm it's obvious.
-//   2. Tool-pointing-DOWN goal orientation (eeGoalOrient OZ=-1). UR5e's
-//      null space is much larger when the tool points down — IK has many
-//      more solutions for "reach to (X,Y,Z) with tool down" than "with
-//      tool up", which makes constrained plans actually feasible.
-//   3. Low Z (200mm) so the arm is reaching to a "working surface" — its
-//      designed mode of operation. ee_variations + warmup keeps even
-//      tight constraints reliable here.
+//  1. Bigger swing so the natural cbirrt arc is visibly different from
+//     LinearConstraint's forced straight line. At Y±100mm the arc is
+//     almost imperceptible; at Y±400mm it's obvious.
+//  2. Tool-pointing-DOWN goal orientation (eeGoalOrient OZ=-1). UR5e's
+//     null space is much larger when the tool points down — IK has many
+//     more solutions for "reach to (X,Y,Z) with tool down" than "with
+//     tool up", which makes constrained plans actually feasible.
+//  3. Low Z (200mm) so the arm is reaching to a "working surface" — its
+//     designed mode of operation. ee_variations + warmup keeps even
+//     tight constraints reliable here.
 var (
 	eeAnchorA = r3.Vector{X: 450, Y: 400, Z: 200}
 	eeAnchorB = r3.Vector{X: 450, Y: -400, Z: 200}

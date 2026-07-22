@@ -85,14 +85,14 @@ func TestValidate_NilConfigOK(t *testing.T) {
 // with README.md and the presetByKey switch.
 func TestBuiltinPresetsCatalog(t *testing.T) {
 	want := map[string]bool{
-		"single_arm_obstacle":    true,
-		"linear_constraint":      true,
-		"orientation_constraint": true,
-		"dynamic_obstacle":       true,
-		"multi_arm_choreography": true,
-		"obstacle_progression":   true,
-		"random_translation":     true,
-		"random_rotation":        true,
+		"single_arm_obstacle":       true,
+		"linear_constraint":         true,
+		"orientation_constraint":    true,
+		"dynamic_obstacle":          true,
+		"multi_arm_choreography":    true,
+		"obstacle_progression":      true,
+		"random_translation":        true,
+		"random_rotation":           true,
 		"arc_over_obstacle":         true,
 		"duck_under_obstacle":       true,
 		"gripper_with_box":          true,
