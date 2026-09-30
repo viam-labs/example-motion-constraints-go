@@ -76,7 +76,7 @@ func run() error {
 		{"forward500_Y100_z450", r3.Vector{X: 500, Y: 100, Z: 450}, r3.Vector{X: 500, Y: -100, Z: 450}},
 		{"forward550_Y100_z450", r3.Vector{X: 550, Y: 100, Z: 450}, r3.Vector{X: 550, Y: -100, Z: 450}},
 		{"forward400_Y100_z450", r3.Vector{X: 400, Y: 100, Z: 450}, r3.Vector{X: 400, Y: -100, Z: 450}},
-		{"Z150_x500", r3.Vector{X: 500, Y: 0, Z: 400}, r3.Vector{X: 500, Y: 0, Z: 550}}, // vertical swing
+		{"Z150_x500", r3.Vector{X: 500, Y: 0, Z: 400}, r3.Vector{X: 500, Y: 0, Z: 550}},    // vertical swing
 		{"x150_y0_z450", r3.Vector{X: 400, Y: 0, Z: 450}, r3.Vector{X: 550, Y: 0, Z: 450}}, // forward swing
 	}
 
